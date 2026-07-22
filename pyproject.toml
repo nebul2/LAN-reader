@@ -1,0 +1,23 @@
+[project]
+name = "measure"
+version = "0.1.0"
+description = "Multi-plug LAN power measurement CLI (Tapo P110 and friends)"
+requires-python = ">=3.11"
+dependencies = [
+    "tapo>=0.8.1",
+    "rich>=13",
+]
+
+[project.optional-dependencies]
+shelly = ["aiohttp>=3.9"]
+dev = ["pytest>=8"]
+
+[project.scripts]
+measure = "measure.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]

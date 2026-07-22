@@ -1,0 +1,30 @@
+# Copy to config.toml and edit. config.toml is gitignored (it holds credentials).
+
+[defaults]
+interval    = 2.0        # seconds between samples
+duration    = "10m"      # bare seconds, Ns/Nm/Nh, or "unlimited"
+results_dir = "results"
+
+[credentials.tapo]
+# Tapo cloud account. TAPO_USERNAME / TAPO_PASSWORD env vars take precedence.
+username = "you@example.com"
+password = "changeme"
+
+[plugs.desk]
+type = "tapo"
+ip   = "192.168.1.41"
+
+[plugs.rack]
+type = "tapo"
+ip   = "192.168.1.42"
+
+# Synthetic device for dry runs — no hardware needed.
+[plugs.fake1]
+type = "fake"
+
+# Per-plug credential override (optional):
+# [plugs.special]
+# type     = "tapo"
+# ip       = "192.168.1.50"
+# username = "other@example.com"
+# password = "secret"
