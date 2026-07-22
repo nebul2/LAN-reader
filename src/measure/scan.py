@@ -234,6 +234,26 @@ def run_scan(subnet_arg: str, config_arg: Path | None, console: Console) -> int:
         )
         return 1
 
+    # Devices answered, so the credentials work — persist them now, regardless
+    # of whether any plugs end up being added below.
+    if not config_path.exists():
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text(new_config_text(username, password))
+        console.print(f"Created {config_path} with Tapo credentials.")
+    else:
+        file_creds = raw.get("credentials", {}).get("tapo")
+        if file_creds is None:
+            config_path.write_text(
+                config_path.read_text()
+                + f'\n[credentials.tapo]\nusername = "{username}"\npassword = "{password}"\n'
+            )
+            console.print(f"Saved Tapo credentials to {config_path}.")
+        elif not (file_creds.get("username") and file_creds.get("password")):
+            console.print(
+                "[yellow]Note:[/yellow] [credentials.tapo] in the config is incomplete — "
+                "fill it in (or set TAPO_USERNAME/TAPO_PASSWORD) before measuring."
+            )
+
     table = Table(box=None, pad_edge=False)
     table.add_column("IP")
     table.add_column("MODEL")
@@ -272,27 +292,13 @@ def run_scan(subnet_arg: str, config_arg: Path | None, console: Console) -> int:
         accepted.append((alias, d["ip"]))
 
     if not accepted and mode == "add":
-        console.print("No changes made.")
+        console.print("No plugs added.")
         return 0
 
-    # Write the config
-    if config_path.exists():
-        text = config_path.read_text()
-        if mode == "replace":
-            text = remove_plug_sections(text, tapo_aliases)
-        file_creds = raw.get("credentials", {}).get("tapo")
-        if file_creds is None:
-            # Persist the credentials we scanned with so measurement runs work.
-            text += f'\n[credentials.tapo]\nusername = "{username}"\npassword = "{password}"\n'
-            console.print(f"Saved Tapo credentials to {config_path}.")
-        elif not (file_creds.get("username") and file_creds.get("password")):
-            console.print(
-                "[yellow]Note:[/yellow] [credentials.tapo] in the config is incomplete — "
-                "fill it in (or set TAPO_USERNAME/TAPO_PASSWORD) before measuring."
-            )
-    else:
-        config_path.parent.mkdir(parents=True, exist_ok=True)
-        text = new_config_text(username, password)
+    # Write the plug list (the file exists by now — created above if needed)
+    text = config_path.read_text()
+    if mode == "replace":
+        text = remove_plug_sections(text, tapo_aliases)
     for alias, ip in accepted:
         text += plug_section(alias, ip)
     config_path.write_text(text)
