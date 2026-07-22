@@ -280,6 +280,16 @@ def run_scan(subnet_arg: str, config_arg: Path | None, console: Console) -> int:
         text = config_path.read_text()
         if mode == "replace":
             text = remove_plug_sections(text, tapo_aliases)
+        file_creds = raw.get("credentials", {}).get("tapo")
+        if file_creds is None:
+            # Persist the credentials we scanned with so measurement runs work.
+            text += f'\n[credentials.tapo]\nusername = "{username}"\npassword = "{password}"\n'
+            console.print(f"Saved Tapo credentials to {config_path}.")
+        elif not (file_creds.get("username") and file_creds.get("password")):
+            console.print(
+                "[yellow]Note:[/yellow] [credentials.tapo] in the config is incomplete — "
+                "fill it in (or set TAPO_USERNAME/TAPO_PASSWORD) before measuring."
+            )
     else:
         config_path.parent.mkdir(parents=True, exist_ok=True)
         text = new_config_text(username, password)
