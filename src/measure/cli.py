@@ -5,6 +5,7 @@ Examples:
     measure --all
     measure --plugs desk --interval 0.5 --duration unlimited
     measure --list
+    measure --scan                            # discover plugs on the local /24
     measure --plugs fake1 --duration 30s      # dry run, no hardware
 """
 
@@ -53,6 +54,11 @@ def build_parser() -> argparse.ArgumentParser:
     group.add_argument("--plugs", help="comma-separated plug aliases from the config")
     group.add_argument("--all", action="store_true", help="measure every configured plug")
     group.add_argument("--list", action="store_true", help="list configured plugs and exit")
+    group.add_argument(
+        "--scan", nargs="?", const="auto", metavar="SUBNET",
+        help="scan the LAN for Tapo plugs and interactively add them to the config "
+             "(default: local /24; e.g. --scan 10.0.0.0/24)",
+    )
     parser.add_argument("--duration", help="e.g. 90s, 10m, 2h, or 'unlimited' (default from config)")
     parser.add_argument("--interval", type=float, help="seconds between samples (default from config)")
     parser.add_argument("--config", type=Path, help="path to config.toml")
@@ -72,6 +78,14 @@ def _list_plugs(config: Config, console: Console) -> None:
 def main(argv: list[str] | None = None) -> int:
     console = Console()
     args = build_parser().parse_args(argv)
+
+    if args.scan:
+        from measure.scan import run_scan
+        try:
+            return run_scan(args.scan, args.config, console)
+        except KeyboardInterrupt:
+            console.print("\nScan aborted — no changes made.")
+            return 130
 
     try:
         config = load_config(args.config)

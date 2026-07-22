@@ -28,6 +28,8 @@ Requires Python ≥ 3.11.
 ## Use
 
 ```sh
+measure --scan                                # discover Tapo plugs on the local /24
+measure --scan 10.0.0.0/24                    # ...or an explicit subnet
 measure --list                                # show configured plugs
 measure --plugs desk,rack --duration 10m      # measure two plugs for 10 minutes
 measure --all                                 # every configured plug
@@ -37,6 +39,15 @@ measure --plugs fake1 --duration 30s          # dry run, no hardware
 
 Durations: bare seconds, `90s`, `10m`, `2h`, or `unlimited`. First Ctrl-C stops
 gracefully (data is already on disk); a second one hard-exits.
+
+`--scan` probes the subnet for hosts answering on port 80, then confirms each
+one with a real Tapo handshake (so it needs your Tapo cloud credentials — from
+the config, `TAPO_USERNAME`/`TAPO_PASSWORD`, or an interactive prompt). Each
+device found is offered interactively: accept or refuse it, and name it (the
+plug's Tapo nickname is the suggested alias). If the config already has Tapo
+plugs you choose up front whether to add to them or replace them; everything
+else in the file (credentials, defaults, fake plugs, comments) is preserved,
+and a missing config file is created from scratch.
 
 Each run writes to `results/` (override with `--results-dir` / `--run-name`):
 
