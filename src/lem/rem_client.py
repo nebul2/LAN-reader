@@ -50,6 +50,7 @@ class BatchAck:
     inserted: int
     duplicate: bool
     cadence_s: int
+    is_current: bool
 
 
 def parse_join_code(code: str) -> RemJoin:
@@ -142,6 +143,7 @@ class RemClient:
             inserted=int(data.get("inserted", 0)),
             duplicate=bool(data.get("duplicate")),
             cadence_s=int(data.get("target_cadence_s", 10)),
+            is_current=bool(data.get("is_current", True)),
         )
 
     def status(self) -> dict:

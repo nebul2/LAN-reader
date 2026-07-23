@@ -51,13 +51,7 @@ def _render(progress, states, rem_state):
 
 
 def _rem_line(rem_state) -> str:
-    if rem_state is None:
-        return ""
-    up = rem_state.rows_uploaded
-    status = rem_state.status
-    if rem_state.last_error:
-        status = f"{status} ({' '.join(rem_state.last_error.split())[:50]})"
-    return f"REM: uploaded {up} — {status}"
+    return rem_state.banner() if rem_state is not None else ""
 
 
 def make_display(states: list[PlugState], duration: float | None, console: Console,

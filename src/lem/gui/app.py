@@ -342,12 +342,8 @@ class MainWindow(QMainWindow):
             elapsed = int(time.monotonic() - self.start_time)
             self.remaining_label.setText(f"{elapsed // 60:02d}:{elapsed % 60:02d} elapsed")
         if self.rem_state is not None:
-            s = self.rem_state
-            extra = f" — REM: uploaded {s.rows_uploaded} ({s.status})"
-            if s.last_error:
-                extra += f" {' '.join(s.last_error.split())[:40]}"
-            base = self.status_label.text().split(" — REM:")[0]
-            self.status_label.setText(base + extra)
+            base = self.status_label.text().split("   •   ")[0]
+            self.status_label.setText(base + "   •   " + self.rem_state.banner())
 
     def _run_teardown(self):
         self.timer.stop()

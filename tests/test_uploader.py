@@ -107,7 +107,7 @@ class FakeClient:
         from lem.rem_client import BatchAck
         self.rows.extend(rows)
         self.batch_ids.append(batch_id)
-        return BatchAck(inserted=len(rows), duplicate=False, cadence_s=10)
+        return BatchAck(inserted=len(rows), duplicate=False, cadence_s=10, is_current=True)
 
 
 def test_run_uploader_streams_and_stops(tmp_path):

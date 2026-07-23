@@ -35,6 +35,17 @@ class UploaderState:
     last_error: str = ""
     cadence_s: int | None = None
     connected: bool = False
+    experiment_live: bool | None = None  # None until first ack; False = paused/ended
+
+    def banner(self) -> str:
+        """One-line status for the UI."""
+        if self.last_error:
+            return f"⚠ REM: {' '.join(self.last_error.split())[:60]}"
+        if self.experiment_live is False:
+            return "⏸ REM experiment not running — data won't appear in results until it's started"
+        if self.experiment_live:
+            return f"⏺ Recording to REM — uploaded {self.rows_uploaded}"
+        return f"REM: uploaded {self.rows_uploaded} ({self.status})"
 
 
 def _sidecar_path(combined_path: Path) -> Path:
@@ -112,7 +123,9 @@ async def _drain_once(combined_path, alias_map, client, state, covering, max_row
             # Nothing new: heartbeat (throwaway id) so field sessions stay
             # alive. Never uses the pending id, which is reserved for data.
             if covering:
-                await _post(client, state, [], covering, uuid.uuid4().hex)
+                ack = await _post(client, state, [], covering, uuid.uuid4().hex)
+                if ack is not None:
+                    state.experiment_live = ack.is_current
             return True
 
         # One batch's worth of complete lines, so the byte offset we advance
@@ -139,6 +152,7 @@ async def _drain_once(combined_path, alias_map, client, state, covering, max_row
         state.rows_uploaded += ack.inserted if not ack.duplicate else 0
         if ack.cadence_s:
             state.cadence_s = ack.cadence_s
+        state.experiment_live = ack.is_current
         sidecar.update(offset=new_offset, pending_batch_id=None,
                        rows_acked=sidecar.get("rows_acked", 0) + len(rows))
         _write_sidecar(combined_path, sidecar)
