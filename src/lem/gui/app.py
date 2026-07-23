@@ -572,6 +572,10 @@ def main() -> int:
         app.setWindowIcon(icon)
     window = MainWindow()
     if os.environ.get("LEM_SMOKE") or os.environ.get("LAN_READER_SMOKE"):
+        # Exercise the lazily-imported modules (tapo, devices, workers) so the
+        # smoke catches a corrupted bundle before a user hits it on scan/measure.
+        import tapo  # noqa: F401
+        import lem.devices.tapo, lem.devices.fake, lem.runner, lem.rem_client, lem.uploader  # noqa
         return 0
     window.show()
     return app.exec()
