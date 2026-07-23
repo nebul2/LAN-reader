@@ -42,7 +42,26 @@ def _build_table(states: list[PlugState]) -> Table:
     return table
 
 
-def make_display(states: list[PlugState], duration: float | None, console: Console):
+def _render(progress, states, rem_state):
+    parts = [progress, _build_table(states)]
+    line = _rem_line(rem_state)
+    if line:
+        parts.append(line)
+    return Group(*parts)
+
+
+def _rem_line(rem_state) -> str:
+    if rem_state is None:
+        return ""
+    up = rem_state.rows_uploaded
+    status = rem_state.status
+    if rem_state.last_error:
+        status = f"{status} ({' '.join(rem_state.last_error.split())[:50]})"
+    return f"REM: uploaded {up} — {status}"
+
+
+def make_display(states: list[PlugState], duration: float | None, console: Console,
+                 rem_state=None):
     """Returns an async callable(stop_event) for runner.run()'s display slot."""
 
     async def display_task(stop_event: asyncio.Event) -> None:
@@ -68,13 +87,13 @@ def make_display(states: list[PlugState], duration: float | None, console: Conso
             while not stop_event.is_set():
                 elapsed = time.monotonic() - start
                 progress.update(task_id, completed=elapsed)
-                live.update(Group(progress, _build_table(states)))
+                live.update(_render(progress, states, rem_state))
                 try:
                     await asyncio.wait_for(stop_event.wait(), timeout=REFRESH_INTERVAL)
                 except TimeoutError:
                     pass
             progress.update(task_id, completed=duration if duration is not None else elapsed)
-            live.update(Group(progress, _build_table(states)))
+            live.update(_render(progress, states, rem_state))
 
     return display_task
 

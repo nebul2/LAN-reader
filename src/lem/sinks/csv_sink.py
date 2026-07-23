@@ -24,6 +24,7 @@ class CsvSink(BaseSink):
         self._combined = None
         self._combined_writer = None
         self.paths: list[Path] = []
+        self.combined_path: Path | None = None  # set in open(); read by the REM uploader
 
     def _open_csv(self, path: Path, header: list[str]):
         f = open(path, "a", newline="")
@@ -39,11 +40,11 @@ class CsvSink(BaseSink):
             path = self._dir / f"{run_name}_{alias}.csv"
             self._plug_files[alias] = self._open_csv(path, ["timestamp", "power_w"])
             self.paths.append(path)
-        combined_path = self._dir / f"{run_name}_combined.csv"
+        self.combined_path = self._dir / f"{run_name}_combined.csv"
         self._combined, self._combined_writer = self._open_csv(
-            combined_path, ["timestamp", "alias", "power_w"]
+            self.combined_path, ["timestamp", "alias", "power_w"]
         )
-        self.paths.append(combined_path)
+        self.paths.append(self.combined_path)
 
     async def write(self, sample: Sample) -> None:
         ts = sample.ts.isoformat(timespec="milliseconds")

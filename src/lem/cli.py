@@ -7,6 +7,8 @@ Examples:
     lem --list
     lem --scan                            # discover plugs on the local /24
     lem --plugs fake1 --duration 30s      # dry run, no hardware
+    lem rem join <code>                   # connect to a REM experiment
+    lem rem status                        # REM connection + upload status
 """
 
 import argparse
@@ -19,11 +21,19 @@ from pathlib import Path
 
 from rich.console import Console
 
-from lem.config import Config, ConfigError, load_config
+from lem.config import Config, ConfigError, PlugConfig, load_config, upload_alias
 from lem.display import make_display, print_summary
 from lem.model import PlugState
 from lem.runner import run
 from lem.sinks.csv_sink import CsvSink
+
+
+def _rem_upload_alias(config: Config, plug: PlugConfig) -> str:
+    return upload_alias(plug)
+
+
+def _combined_path(sink: CsvSink) -> Path:
+    return sink.combined_path
 
 _DURATION_RE = re.compile(r"^(\d+(?:\.\d+)?)([smh]?)$")
 _DURATION_MULT = {"": 1, "s": 1, "m": 60, "h": 3600}
@@ -77,6 +87,13 @@ def _list_plugs(config: Config, console: Console) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     console = Console()
+
+    # `lem rem ...` is a separate command group (keeps the flat flag UX above).
+    argv_list = list(sys.argv[1:] if argv is None else argv)
+    if argv_list and argv_list[0] == "rem":
+        from lem import rem_cli
+        return rem_cli.main(argv_list[1:])
+
     args = build_parser().parse_args(argv)
 
     if args.scan:
@@ -130,19 +147,49 @@ def main(argv: list[str] | None = None) -> int:
     results_dir = args.results_dir or config.results_dir
     run_name = args.run_name or datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
+    # If joined to REM, adopt its cadence as the interval unless the user set
+    # one explicitly. Best-effort — never block measurement on REM.
+    rem_client = None
+    rem_state = None
+    if config.rem:
+        from lem.rem_client import RemClient, RemError
+        from lem.uploader import UploaderState
+        rem_client = RemClient(config.rem.url, config.rem.token)
+        rem_state = UploaderState()
+        if args.interval is None:
+            try:
+                hello = rem_client.hello([_rem_upload_alias(config, p) for p in plugs])
+                interval = float(hello.cadence_s)
+                console.print(f"[green]REM:[/green] cadence {hello.cadence_s}s "
+                              f"(experiment '{config.rem.experiment_name}')")
+            except RemError as e:
+                console.print(f"[yellow]REM not reachable ({e}); measuring anyway.[/yellow]")
+
     states = {p.alias: PlugState(alias=p.alias, ip=p.ip) for p in plugs}
     sink = CsvSink(results_dir)
 
     async def _main() -> bool:
         await sink.open(run_name, [p.alias for p in plugs])
-        return await run(
-            plugs,
-            states,
-            [sink],
-            interval,
-            duration,
-            display_coro=make_display(list(states.values()), duration, console),
-        )
+        stop_event = asyncio.Event()
+        tasks = []
+        if rem_client is not None:
+            from lem.uploader import init_sidecar, run_uploader
+            combined = _combined_path(sink)
+            init_sidecar(combined, config.rem.experiment_id)
+            alias_map = {p.alias: _rem_upload_alias(config, p) for p in plugs}
+            covering = list(alias_map.values())
+            tasks.append(asyncio.create_task(run_uploader(
+                combined, alias_map, rem_client, rem_state, stop_event, covering,
+            )))
+        try:
+            return await run(
+                plugs, states, [sink], interval, duration,
+                display_coro=make_display(list(states.values()), duration, console, rem_state),
+                stop_event=stop_event,
+            )
+        finally:
+            for t in tasks:
+                await t
 
     start = time.monotonic()
     try:
