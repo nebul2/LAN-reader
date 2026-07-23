@@ -124,6 +124,11 @@ class MainWindow(QMainWindow):
         results_button.clicked.connect(self.open_results)
         bottom_row.addWidget(results_button)
         bottom_row.addStretch()
+        rem_button = QPushButton("Connect to REM…")
+        rem_button.setStyleSheet("font-weight: bold; padding: 4px 14px;")
+        rem_button.setToolTip("Send measurements to the REM platform (coming soon)")
+        rem_button.clicked.connect(self.rem_clicked)
+        bottom_row.addWidget(rem_button)
         layout.addLayout(bottom_row)
 
         self.status_label = QLabel("")
@@ -383,6 +388,18 @@ class MainWindow(QMainWindow):
             self.status_label.setText(note + "  " + self.status_label.text())
 
     # ------------------------------------------------------------------- misc
+
+    def rem_clicked(self):
+        QMessageBox.information(
+            self, "Connect to REM",
+            "Coming soon!\n\n"
+            "A future version will send measurements straight to the REM "
+            "platform (Greening of Streaming's energy database) while they "
+            "run, alongside the local CSV files.\n\n"
+            "Your data is already REM-compatible — the combined CSV columns "
+            "match REM's format exactly, so nothing recorded today will be "
+            "left behind.",
+        )
 
     def open_results(self):
         folder = self.results_dir()
