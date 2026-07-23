@@ -369,7 +369,7 @@ def run_scan(subnet_arg: str, config_arg: Path | None, console: Console) -> int:
 
     # Accept / name / refuse each
     taken = set(existing_plugs) - (tapo_aliases if mode == "replace" else set())
-    accepted: list[tuple[str, str]] = []  # (alias, ip)
+    accepted: list[tuple] = []  # (alias, ip, tapo_name)
     for d in found:
         label = f"{d['ip']} ({d['model']}" + (f", \"{d['nickname']}\"" if d["nickname"] else "") + ")"
         if mode == "add" and d["ip"] in ip_to_alias:
@@ -377,18 +377,15 @@ def run_scan(subnet_arg: str, config_arg: Path | None, console: Console) -> int:
             continue
         if _ask(f"Add {label}? [Y/n] ", "y").lower() not in ("y", "yes"):
             continue
-        default = unique_alias(
+        # Auto-name the local handle from the Tapo nickname (the source of
+        # truth). The nickname is stored verbatim as tapo_name and is what REM
+        # keys on; this alias is only a filename-safe slug of it.
+        alias = unique_alias(
             sanitize_alias(d["nickname"]) if d["nickname"] else f"plug{d['ip'].rsplit('.', 1)[1]}",
             taken,
         )
-        alias = None
-        while alias is None:
-            candidate = sanitize_alias(_ask(f"  Alias [{default}]: ", default))
-            if candidate in taken:
-                console.print(f"  [yellow]'{candidate}' is already used — pick another.[/yellow]")
-            else:
-                alias = candidate
         taken.add(alias)
+        console.print(f"  named '{alias}'  (Tapo nickname: \"{d['nickname'] or '—'}\")")
         accepted.append((alias, d["ip"], d.get("nickname") or None))
 
     if not accepted and mode == "add":
