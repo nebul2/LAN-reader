@@ -22,6 +22,10 @@ jobs:
       - run: pip install -e ".[gui,dev]"
       - name: Unit tests
         run: pytest -q
+      # Even the offscreen Qt platform dlopens libEGL/libGL/libxkbcommon,
+      # which aren't on ubuntu-latest by default.
+      - name: Install Qt runtime libs (headless)
+        run: sudo apt-get update && sudo apt-get install -y libegl1 libgl1 libxkbcommon0 libdbus-1-3
       - name: GUI smoke (offscreen)
         env:
           QT_QPA_PLATFORM: offscreen
