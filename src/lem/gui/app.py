@@ -21,11 +21,16 @@ from PySide6.QtWidgets import (
 
 from lem import scan as scan_mod
 from lem.cli import parse_duration
-from lem.config import DEFAULT_PATHS, ConfigError, load_config
+from lem.config import DEFAULT_PATHS, ConfigError, load_config, upload_alias
+from lem.gui.rem_dialogs import JoinDialog, StatusDialog
 from lem.gui.scan_dialog import ScanResultsDialog
-from lem.gui.workers import MeasurementWorker, ScanWorker
+from lem.gui.workers import (
+    MeasurementWorker, RemJoinWorker, RemSyncWorker, ScanWorker,
+)
 from lem.model import PlugState
+from lem.rem_client import RemClient
 from lem.sinks.csv_sink import CsvSink
+from lem.uploader import UploaderState, find_unsynced
 
 
 def default_config_path() -> Path:
@@ -55,6 +60,9 @@ class MainWindow(QMainWindow):
         # Credentials typed this session, kept so a failed scan doesn't
         # re-prompt (they're only written to config after a successful scan).
         self._session_creds = None
+        self.rem_state = None          # UploaderState during a joined run
+        self._join_worker = None
+        self._sync_worker = None
 
         self.setWindowTitle("LEM — Local Energy Measurement")
         self.resize(680, 640)
@@ -124,11 +132,10 @@ class MainWindow(QMainWindow):
         results_button.clicked.connect(self.open_results)
         bottom_row.addWidget(results_button)
         bottom_row.addStretch()
-        rem_button = QPushButton("Connect to REM…")
-        rem_button.setStyleSheet("font-weight: bold; padding: 4px 14px;")
-        rem_button.setToolTip("Send measurements to the REM platform (coming soon)")
-        rem_button.clicked.connect(self.rem_clicked)
-        bottom_row.addWidget(rem_button)
+        self.rem_button = QPushButton("Connect to REM…")
+        self.rem_button.setStyleSheet("font-weight: bold; padding: 4px 14px;")
+        self.rem_button.clicked.connect(self.rem_clicked)
+        bottom_row.addWidget(self.rem_button)
         layout.addLayout(bottom_row)
 
         self.status_label = QLabel("")
@@ -165,6 +172,17 @@ class MainWindow(QMainWindow):
         self.duration_edit.setText(str(self.config.duration))
         self.interval_spin.setValue(self.config.interval)
         self.status_label.setText(f"Config: {self.config_path} — {len(self.config.plugs)} plug(s)")
+        self._refresh_rem_button()
+
+    def _refresh_rem_button(self):
+        rem = self.config.rem if self.config else None
+        if rem:
+            name = rem.experiment_name or rem.experiment_id
+            self.rem_button.setText(f"REM: {name}")
+            self.rem_button.setToolTip(f"Joined to '{name}' at {rem.url} — click for status")
+        else:
+            self.rem_button.setText("Connect to REM…")
+            self.rem_button.setToolTip("Send measurements to the REM platform")
 
     def results_dir(self) -> Path:
         base = self.config.results_dir if self.config else Path("results")
@@ -221,6 +239,16 @@ class MainWindow(QMainWindow):
         self.run_duration = duration
         self.start_time = time.monotonic()
 
+        # If joined to REM, stream this run there via the shared uploader.
+        uploader_spec = None
+        self.rem_state = None
+        if self.config.rem:
+            client = RemClient(self.config.rem.url, self.config.rem.token)
+            client.experiment_id = self.config.rem.experiment_id
+            alias_map = {p.alias: upload_alias(p) for p in plugs}
+            self.rem_state = UploaderState()
+            uploader_spec = (client, alias_map, self.rem_state)
+
         self.table.setRowCount(len(plugs))
         for row, p in enumerate(plugs):
             for col, text in enumerate([p.alias, p.ip, "—", "0", "connecting"]):
@@ -228,7 +256,8 @@ class MainWindow(QMainWindow):
         self.table.resizeColumnsToContents()
 
         self.worker = MeasurementWorker(
-            plugs, self.states, [self.current_sink], interval, duration, run_name
+            plugs, self.states, [self.current_sink], interval, duration, run_name,
+            uploader_spec=uploader_spec,
         )
         self.worker.completed.connect(self.run_finished)
         self.worker.failed.connect(self.run_failed)
@@ -266,6 +295,13 @@ class MainWindow(QMainWindow):
         elif self.start_time is not None:
             elapsed = int(time.monotonic() - self.start_time)
             self.remaining_label.setText(f"{elapsed // 60:02d}:{elapsed % 60:02d} elapsed")
+        if self.rem_state is not None:
+            s = self.rem_state
+            extra = f" — REM: uploaded {s.rows_uploaded} ({s.status})"
+            if s.last_error:
+                extra += f" {' '.join(s.last_error.split())[:40]}"
+            base = self.status_label.text().split(" — REM:")[0]
+            self.status_label.setText(base + extra)
 
     def _run_teardown(self):
         self.timer.stop()
@@ -390,16 +426,83 @@ class MainWindow(QMainWindow):
     # ------------------------------------------------------------------- misc
 
     def rem_clicked(self):
-        QMessageBox.information(
-            self, "Connect to REM",
-            "Coming soon!\n\n"
-            "A future version will send measurements straight to the REM "
-            "platform (Greening of Streaming's energy database) while they "
-            "run, alongside the local CSV files.\n\n"
-            "Your data is already REM-compatible — the combined CSV columns "
-            "match REM's format exactly, so nothing recorded today will be "
-            "left behind.",
+        if self.config and self.config.rem:
+            self._rem_status()
+        else:
+            self._rem_join()
+
+    def _rem_join(self):
+        dialog = JoinDialog(self)
+        if not dialog.exec() or dialog.join is None:
+            return
+        join = dialog.join
+        self.rem_button.setEnabled(False)
+        self.status_label.setText(f"Connecting to REM at {join.url}…")
+        self._pending_join = join
+        self._join_worker = RemJoinWorker(join.url, join.token)
+        self._join_worker.joined.connect(self._rem_joined)
+        self._join_worker.failed.connect(self._rem_join_failed)
+        self._join_worker.start()
+
+    def _rem_joined(self, hello):
+        self.rem_button.setEnabled(True)
+        join = self._pending_join
+        scan_mod.write_rem_section(
+            self.config_path, join.url, join.token,
+            hello.experiment_id, hello.experiment_name,
         )
+        self.reload_config()
+        msg = (f"Joined experiment '{hello.experiment_name}'.\n\n"
+               f"Measurement cadence set by REM: {hello.cadence_s}s "
+               f"(you can still override it before starting).\n\n"
+               "LEM measures locally and never contacts the TP-Link cloud — "
+               "data goes only to your REM server.")
+        if hello.clock_skew_s > 30:
+            msg += (f"\n\nWarning: this computer's clock differs from REM by "
+                    f"~{hello.clock_skew_s:.0f}s. Fix the clock so measurements "
+                    "land at the right time.")
+        self.interval_spin.setValue(float(hello.cadence_s))
+        self.interval_spin.setToolTip(f"Cadence suggested by experiment '{hello.experiment_name}'")
+        QMessageBox.information(self, "Connected to REM", msg)
+        self.status_label.setText(f"Joined REM experiment '{hello.experiment_name}'.")
+
+    def _rem_join_failed(self, message):
+        self.rem_button.setEnabled(True)
+        QMessageBox.critical(self, "Could not join REM", message)
+        self.status_label.setText(f"REM join failed: {message}")
+
+    def _rem_status(self):
+        rem = self.config.rem
+        unsynced = len(find_unsynced(self.results_dir())) if self.results_dir().exists() else 0
+        dialog = StatusDialog(rem, unsynced, self.rem_state, self)
+        if not dialog.exec():
+            return
+        if dialog.action == "leave":
+            self.config_path.write_text(scan_mod.remove_rem_section(self.config_path.read_text()))
+            self.reload_config()
+            self.status_label.setText("Disconnected from REM.")
+        elif dialog.action == "sync":
+            self._rem_sync()
+
+    def _rem_sync(self):
+        rem = self.config.rem
+        client = RemClient(rem.url, rem.token)
+        alias_map = {p.alias: upload_alias(p) for p in self.config.plugs.values()}
+        self.rem_button.setEnabled(False)
+        self._sync_worker = RemSyncWorker(self.results_dir(), alias_map, client)
+        self._sync_worker.progress.connect(lambda m: self.status_label.setText(m))
+        self._sync_worker.done.connect(self._rem_sync_done)
+        self._sync_worker.failed.connect(self._rem_sync_failed)
+        self._sync_worker.start()
+
+    def _rem_sync_done(self, total):
+        self.rem_button.setEnabled(True)
+        self.status_label.setText(f"Backfill complete — uploaded {total} rows to REM.")
+
+    def _rem_sync_failed(self, message):
+        self.rem_button.setEnabled(True)
+        QMessageBox.critical(self, "Sync failed", message)
+        self.status_label.setText(f"REM sync failed: {message}")
 
     def open_results(self):
         folder = self.results_dir()
