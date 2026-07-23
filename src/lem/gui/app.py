@@ -71,10 +71,10 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
         layout = QVBoxLayout(central)
 
-        layout.addWidget(QLabel("Plugs (tick the ones to measure — double-click to rename):"))
+        layout.addWidget(QLabel("Plugs — tick to select, then Start to measure or "
+                                "Remove to delete (double-click to rename):"))
         self.plug_list = QListWidget()
         self.plug_list.setMaximumHeight(160)
-        self.plug_list.setSelectionMode(QListWidget.ExtendedSelection)
         self.plug_list.itemDoubleClicked.connect(self.rename_plug)
         layout.addWidget(self.plug_list)
 
@@ -82,9 +82,9 @@ class MainWindow(QMainWindow):
         self.scan_button = QPushButton("Scan network for plugs…")
         self.scan_button.clicked.connect(self.scan_clicked)
         scan_row.addWidget(self.scan_button)
-        self.remove_button = QPushButton("Remove selected")
-        self.remove_button.setToolTip("Delete the highlighted plug(s) from the config "
-                                      "(highlight a row; Shift/Cmd-click for several)")
+        self.remove_button = QPushButton("Remove ticked")
+        self.remove_button.setToolTip("Delete the ticked plug(s) from the config "
+                                      "(this only edits the config, not the devices)")
         self.remove_button.clicked.connect(self.remove_selected_plugs)
         scan_row.addWidget(self.remove_button)
         reload_button = QPushButton("Reload config")
@@ -205,11 +205,10 @@ class MainWindow(QMainWindow):
     def remove_selected_plugs(self):
         if self.worker is not None or self.config is None:
             return
-        aliases = [i.data(Qt.UserRole) for i in self.plug_list.selectedItems()]
+        aliases = self.checked_aliases()
         if not aliases:
-            QMessageBox.information(self, "Nothing selected",
-                                    "Highlight one or more plugs in the list first "
-                                    "(click a row; Shift/Cmd-click for several).")
+            QMessageBox.information(self, "Nothing ticked",
+                                    "Tick the plug(s) you want to remove, then click Remove.")
             return
         listing = ", ".join(aliases)
         if QMessageBox.question(
