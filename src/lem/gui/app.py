@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from PySide6.QtCore import Qt, QTimer, QUrl
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtGui import QDesktopServices, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QApplication, QDoubleSpinBox, QHBoxLayout, QInputDialog, QLabel, QLineEdit,
     QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QProgressBar,
@@ -31,6 +31,13 @@ from lem.model import PlugState
 from lem.rem_client import RemClient
 from lem.sinks.csv_sink import CsvSink
 from lem.uploader import UploaderState, find_unsynced
+
+
+def asset_path(name: str) -> str:
+    """Locate a bundled asset in dev and inside a PyInstaller bundle."""
+    if hasattr(sys, "_MEIPASS"):
+        return os.path.join(sys._MEIPASS, "lem_assets", name)
+    return os.path.join(os.path.dirname(__file__), "assets", name)
 
 
 def default_config_path() -> Path:
@@ -67,9 +74,25 @@ class MainWindow(QMainWindow):
         self.setWindowTitle("LEM — Local Energy Measurement")
         self.resize(680, 640)
 
+        logo = QPixmap(asset_path("gos-logo.png"))
+        if not logo.isNull():
+            self.setWindowIcon(QIcon(logo))
+
         central = QWidget()
         self.setCentralWidget(central)
         layout = QVBoxLayout(central)
+
+        # Header: GoS logo + product name
+        header = QHBoxLayout()
+        if not logo.isNull():
+            logo_label = QLabel()
+            logo_label.setPixmap(logo.scaledToHeight(44, Qt.SmoothTransformation))
+            header.addWidget(logo_label)
+        title = QLabel("<b>LEM</b> — Local Energy Measurement"
+                       "<br><span style='color:gray'>Greening of Streaming</span>")
+        header.addWidget(title)
+        header.addStretch()
+        layout.addLayout(header)
 
         layout.addWidget(QLabel("Plugs — tick to select, then Start to measure or "
                                 "Remove to delete (names come from the plug):"))
@@ -540,6 +563,9 @@ class MainWindow(QMainWindow):
 def main() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName("LEM")
+    icon = QIcon(asset_path("gos-logo.png"))
+    if not icon.isNull():
+        app.setWindowIcon(icon)
     window = MainWindow()
     if os.environ.get("LEM_SMOKE") or os.environ.get("LAN_READER_SMOKE"):
         return 0

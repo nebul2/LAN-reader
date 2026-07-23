@@ -15,7 +15,7 @@ a = Analysis(
     [os.path.join(SPECPATH, "entry.py")],
     pathex=[SRC],
     binaries=[],
-    datas=[],
+    datas=[(os.path.join(SRC, "lem", "gui", "assets"), "lem_assets")],
     # tapo (Rust extension) and the device modules are imported lazily via the
     # DEVICE_TYPES registry, so PyInstaller's static analysis misses them.
     hiddenimports=[
