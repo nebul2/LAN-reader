@@ -89,9 +89,16 @@ async def run(
     interval: float,
     duration: float | None,
     display_coro=None,
+    stop_event: asyncio.Event | None = None,
+    handle_sigint: bool = True,
 ) -> bool:
-    """Run the measurement. Returns True if stopped by Ctrl-C."""
-    stop_event = asyncio.Event()
+    """Run the measurement. Returns True if stopped by Ctrl-C.
+
+    GUI frontends run this on a worker thread: they pass their own stop_event
+    (set via loop.call_soon_threadsafe) and handle_sigint=False, since signal
+    handlers can only be installed on the main thread.
+    """
+    stop_event = stop_event or asyncio.Event()
     interrupted = False
 
     loop = asyncio.get_running_loop()
@@ -105,7 +112,8 @@ async def run(
             # Second Ctrl-C: hard stop. Data is already flushed per row.
             raise KeyboardInterrupt
 
-    loop.add_signal_handler(signal.SIGINT, on_sigint)
+    if handle_sigint:
+        loop.add_signal_handler(signal.SIGINT, on_sigint)
 
     tasks = [
         asyncio.create_task(poll_plug(p, states[p.alias], sinks, interval, stop_event))
@@ -122,7 +130,8 @@ async def run(
         for t in tasks:
             t.cancel()
         await asyncio.gather(*tasks, return_exceptions=True)
-        loop.remove_signal_handler(signal.SIGINT)
+        if handle_sigint:
+            loop.remove_signal_handler(signal.SIGINT)
         for sink in sinks:
             await sink.close()
     return interrupted

@@ -85,6 +85,30 @@ overrides, the fake device's `fail_rate`, or (one day) a PDU's outlet number.
   implementing `BaseSink` (`open` / `write` / `close`) and append it to the sink
   list in `cli.py`. The measurement loop is sink-agnostic.
 
+## Desktop app (GUI)
+
+The same core with a point-and-click face, for testers who don't use terminals:
+
+```sh
+pip install -e '.[gui]'
+measure-gui
+```
+
+Tick plugs, set duration/interval, Start/Stop, live table, "Scan network for
+plugs…" with an accept/rename dialog, and an "Open results folder" button.
+CSV output is identical to the CLI's.
+
+### Packaging (macOS)
+
+```sh
+./packaging/build_macos.sh     # -> dist/LAN-reader.app (unsigned)
+```
+
+The same `packaging/LAN-reader.spec` builds the Windows .exe when run on a
+Windows machine (PyInstaller doesn't cross-compile) — CI workflow to follow.
+Signing/notarization steps are sketched in `packaging/build_macos.sh` and will
+be enabled once the Greening of Streaming Apple Developer account is active.
+
 ## Test
 
 ```sh

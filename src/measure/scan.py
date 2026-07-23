@@ -11,6 +11,7 @@ sections; other device types are kept.
 """
 
 import asyncio
+import contextlib
 import getpass
 import ipaddress
 import os
@@ -47,6 +48,24 @@ def default_network() -> ipaddress.IPv4Network:
     return ipaddress.ip_network(f"{local_ip}/24", strict=False)
 
 
+def resolve_network(subnet_arg: str | None) -> ipaddress.IPv4Network:
+    """Turn a --scan argument ('auto', None, or a CIDR) into a network.
+    Raises ValueError with a user-facing message."""
+    if subnet_arg and subnet_arg != "auto":
+        network = ipaddress.ip_network(subnet_arg, strict=False)
+    else:
+        try:
+            network = default_network()
+        except OSError as e:
+            raise ValueError(
+                f"could not determine local subnet ({e}); "
+                "pass one explicitly, e.g. 10.0.0.0/24"
+            ) from None
+    if network.num_addresses > 4096:
+        raise ValueError(f"{network} is too large to scan (max /20)")
+    return network
+
+
 async def _port_open(ip: str, sem: asyncio.Semaphore) -> bool:
     async with sem:
         try:
@@ -79,17 +98,24 @@ async def _identify_tapo(ip: str, username: str, password: str) -> dict | None:
 
 
 async def scan_network(
-    network: ipaddress.IPv4Network, username: str, password: str, console: Console
+    network: ipaddress.IPv4Network,
+    username: str,
+    password: str,
+    console: Console | None = None,
 ) -> list[dict]:
+    def status(msg):
+        return console.status(msg) if console else contextlib.nullcontext()
+
     hosts = [str(h) for h in network.hosts()]
-    with console.status(f"Probing {len(hosts)} hosts on {network} (port {PORT})..."):
+    with status(f"Probing {len(hosts)} hosts on {network} (port {PORT})..."):
         sem = asyncio.Semaphore(PORT_CONCURRENCY)
         flags = await asyncio.gather(*(_port_open(h, sem) for h in hosts))
     candidates = [h for h, ok in zip(hosts, flags) if ok]
     if not candidates:
         return []
-    console.print(f"{len(candidates)} host(s) answered on port {PORT}.")
-    with console.status(f"Checking {len(candidates)} host(s) for Tapo devices..."):
+    if console:
+        console.print(f"{len(candidates)} host(s) answered on port {PORT}.")
+    with status(f"Checking {len(candidates)} host(s) for Tapo devices..."):
         sem = asyncio.Semaphore(IDENTIFY_CONCURRENCY)
 
         async def ident(ip):
@@ -135,6 +161,40 @@ def plug_section(alias: str, ip: str) -> str:
     return f'\n[plugs.{alias}]\ntype = "tapo"\nip   = "{ip}"\n'
 
 
+def ensure_credentials_saved(
+    config_path: Path, raw: dict, username: str, password: str
+) -> str | None:
+    """Make sure the config file exists and holds tapo credentials.
+    Returns a human-readable note about what was done, or None."""
+    if not config_path.exists():
+        config_path.parent.mkdir(parents=True, exist_ok=True)
+        config_path.write_text(new_config_text(username, password))
+        return f"Created {config_path} with Tapo credentials."
+    file_creds = raw.get("credentials", {}).get("tapo")
+    if file_creds is None:
+        config_path.write_text(
+            config_path.read_text()
+            + f'\n[credentials.tapo]\nusername = "{username}"\npassword = "{password}"\n'
+        )
+        return f"Saved Tapo credentials to {config_path}."
+    if not (file_creds.get("username") and file_creds.get("password")):
+        return ("Note: [credentials.tapo] in the config is incomplete — "
+                "fill it in (or set TAPO_USERNAME/TAPO_PASSWORD) before measuring.")
+    return None
+
+
+def write_plugs(
+    config_path: Path, accepted: list[tuple[str, str]], remove_aliases: set[str] = frozenset()
+) -> None:
+    """Append accepted (alias, ip) tapo plugs, optionally removing old sections first."""
+    text = config_path.read_text()
+    if remove_aliases:
+        text = remove_plug_sections(text, set(remove_aliases))
+    for alias, ip in accepted:
+        text += plug_section(alias, ip)
+    config_path.write_text(text)
+
+
 def new_config_text(username: str, password: str) -> str:
     return (
         "[defaults]\n"
@@ -162,21 +222,10 @@ def _ask(prompt: str, default: str = "") -> str:
 
 def run_scan(subnet_arg: str, config_arg: Path | None, console: Console) -> int:
     # Resolve subnet
-    if subnet_arg and subnet_arg != "auto":
-        try:
-            network = ipaddress.ip_network(subnet_arg, strict=False)
-        except ValueError as e:
-            console.print(f"[red]Error:[/red] invalid subnet '{subnet_arg}': {e}")
-            return 1
-    else:
-        try:
-            network = default_network()
-        except OSError as e:
-            console.print(f"[red]Error:[/red] could not determine local subnet ({e}); "
-                          "pass one explicitly, e.g. --scan 10.0.0.0/24")
-            return 1
-    if network.num_addresses > 4096:
-        console.print(f"[red]Error:[/red] {network} is too large to scan (max /20)")
+    try:
+        network = resolve_network(subnet_arg)
+    except ValueError as e:
+        console.print(f"[red]Error:[/red] {e}")
         return 1
 
     # Resolve config path and load what exists
@@ -236,23 +285,9 @@ def run_scan(subnet_arg: str, config_arg: Path | None, console: Console) -> int:
 
     # Devices answered, so the credentials work — persist them now, regardless
     # of whether any plugs end up being added below.
-    if not config_path.exists():
-        config_path.parent.mkdir(parents=True, exist_ok=True)
-        config_path.write_text(new_config_text(username, password))
-        console.print(f"Created {config_path} with Tapo credentials.")
-    else:
-        file_creds = raw.get("credentials", {}).get("tapo")
-        if file_creds is None:
-            config_path.write_text(
-                config_path.read_text()
-                + f'\n[credentials.tapo]\nusername = "{username}"\npassword = "{password}"\n'
-            )
-            console.print(f"Saved Tapo credentials to {config_path}.")
-        elif not (file_creds.get("username") and file_creds.get("password")):
-            console.print(
-                "[yellow]Note:[/yellow] [credentials.tapo] in the config is incomplete — "
-                "fill it in (or set TAPO_USERNAME/TAPO_PASSWORD) before measuring."
-            )
+    note = ensure_credentials_saved(config_path, raw, username, password)
+    if note:
+        console.print(note)
 
     table = Table(box=None, pad_edge=False)
     table.add_column("IP")
@@ -296,12 +331,7 @@ def run_scan(subnet_arg: str, config_arg: Path | None, console: Console) -> int:
         return 0
 
     # Write the plug list (the file exists by now — created above if needed)
-    text = config_path.read_text()
-    if mode == "replace":
-        text = remove_plug_sections(text, tapo_aliases)
-    for alias, ip in accepted:
-        text += plug_section(alias, ip)
-    config_path.write_text(text)
+    write_plugs(config_path, accepted, tapo_aliases if mode == "replace" else frozenset())
 
     replaced = f" (replaced {len(tapo_aliases)})" if mode == "replace" else ""
     console.print(f"\nWrote {len(accepted)} plug(s) to {config_path}{replaced}:")
