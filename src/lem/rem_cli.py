@@ -11,7 +11,7 @@ from pathlib import Path
 from rich.console import Console
 
 from lem.config import ConfigError, load_config, upload_alias
-from lem.rem_client import RemClient, RemError, parse_join_code
+from lem.rem_client import DEFAULT_REM_URL, RemClient, RemError, resolve_code
 from lem.scan import remove_rem_section, write_rem_section
 from lem.uploader import UploaderState, find_unsynced, sync_run
 
@@ -23,7 +23,7 @@ def _config_path(args) -> Path:
 
 def _cmd_join(args, console: Console) -> int:
     try:
-        join = parse_join_code(args.code)
+        join = resolve_code(args.code, args.url or DEFAULT_REM_URL)
     except RemError as e:
         console.print(f"[red]{e}[/red]")
         return 1
@@ -162,8 +162,9 @@ def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(prog="lem rem", description="Connect LEM to a REM experiment.")
     parser.add_argument("--config", type=Path, help="path to config.toml")
     sub = parser.add_subparsers(dest="cmd", required=True)
-    p_join = sub.add_parser("join", help="join an experiment with a REM join code")
-    p_join.add_argument("code", help="the REM1-... join code from your operator")
+    p_join = sub.add_parser("join", help="join an experiment with a REM join code or short code")
+    p_join.add_argument("code", help="a short code (e.g. K7F3QP) or a REM1-... code")
+    p_join.add_argument("--url", help=f"REM server for short codes (default {DEFAULT_REM_URL})")
     sub.add_parser("status", help="show REM connection and upload status")
     p_sync = sub.add_parser("sync", help="upload any local runs not yet in REM")
     p_sync.add_argument("--file", help="upload a specific combined CSV")

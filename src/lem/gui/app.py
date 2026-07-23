@@ -481,20 +481,17 @@ class MainWindow(QMainWindow):
 
     def _rem_join(self):
         dialog = JoinDialog(self)
-        if not dialog.exec() or dialog.join is None:
+        if not dialog.exec() or not dialog.code():
             return
-        join = dialog.join
         self.rem_button.setEnabled(False)
-        self.status_label.setText(f"Connecting to REM at {join.url}…")
-        self._pending_join = join
-        self._join_worker = RemJoinWorker(join.url, join.token)
+        self.status_label.setText("Connecting to REM…")
+        self._join_worker = RemJoinWorker(dialog.code(), dialog.url())
         self._join_worker.joined.connect(self._rem_joined)
         self._join_worker.failed.connect(self._rem_join_failed)
         self._join_worker.start()
 
-    def _rem_joined(self, hello):
+    def _rem_joined(self, join, hello):
         self.rem_button.setEnabled(True)
-        join = self._pending_join
         scan_mod.write_rem_section(
             self.config_path, join.url, join.token,
             hello.experiment_id, hello.experiment_name,

@@ -7,48 +7,49 @@ from PySide6.QtWidgets import (
     QVBoxLayout,
 )
 
-from lem.rem_client import RemError, parse_join_code
+from lem.rem_client import DEFAULT_REM_URL, JOIN_CODE_PREFIX
 
 
 class JoinDialog(QDialog):
-    """Paste a join code; live-parses it and calls back to run hello()."""
+    """Enter a join code (short like K7F3QP, or a REM1-… code) and the server."""
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setWindowTitle("Connect to REM")
-        self.join = None
         layout = QVBoxLayout(self)
         layout.addWidget(QLabel(
-            "Paste the REM join code your operator gave you.\n"
+            "Enter the join code your operator gave you.\n"
             "LEM measures locally and never contacts the TP-Link cloud — "
             "your data goes only to your REM server."
         ))
-        self.edit = QLineEdit()
-        self.edit.setPlaceholderText("REM1-…")
-        self.edit.textChanged.connect(self._validate)
-        layout.addWidget(self.edit)
-        self.feedback = QLabel("")
-        self.feedback.setWordWrap(True)
-        layout.addWidget(self.feedback)
+        self.code_edit = QLineEdit()
+        self.code_edit.setPlaceholderText("K7F3QP  or  REM1-…")
+        self.code_edit.textChanged.connect(self._sync)
+        layout.addWidget(QLabel("Join code:"))
+        layout.addWidget(self.code_edit)
+
+        layout.addWidget(QLabel("REM server:"))
+        self.url_edit = QLineEdit(DEFAULT_REM_URL)
+        layout.addWidget(self.url_edit)
 
         self.buttons = QDialogButtonBox(QDialogButtonBox.Ok | QDialogButtonBox.Cancel)
         self.buttons.button(QDialogButtonBox.Ok).setText("Join")
         self.buttons.accepted.connect(self.accept)
         self.buttons.rejected.connect(self.reject)
         layout.addWidget(self.buttons)
-        self._validate("")
+        self._sync("")
 
-    def _validate(self, text):
-        try:
-            self.join = parse_join_code(text)
-            self.feedback.setText(
-                f"[✓] Code for experiment id '{self.join.experiment_id}' at {self.join.url}"
-            )
-            self.buttons.button(QDialogButtonBox.Ok).setEnabled(True)
-        except RemError as e:
-            self.join = None
-            self.feedback.setText("" if not text.strip() else str(e))
-            self.buttons.button(QDialogButtonBox.Ok).setEnabled(False)
+    def _sync(self, text):
+        # Self-contained REM1- codes carry their own URL, so grey the URL box.
+        is_long = self.code_edit.text().strip().startswith(JOIN_CODE_PREFIX)
+        self.url_edit.setEnabled(not is_long)
+        self.buttons.button(QDialogButtonBox.Ok).setEnabled(bool(self.code_edit.text().strip()))
+
+    def code(self) -> str:
+        return self.code_edit.text().strip()
+
+    def url(self) -> str:
+        return self.url_edit.text().strip() or DEFAULT_REM_URL
 
 
 class StatusDialog(QDialog):

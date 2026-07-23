@@ -10,7 +10,7 @@ import asyncio
 from PySide6.QtCore import QThread, Signal
 
 from lem import runner
-from lem.rem_client import RemClient, RemError
+from lem.rem_client import RemClient, RemError, resolve_code
 from lem.scan import scan_network
 from lem.uploader import (
     UploaderState, find_unsynced, init_sidecar, run_uploader, sync_run,
@@ -77,23 +77,23 @@ class MeasurementWorker(QThread):
 
 
 class RemJoinWorker(QThread):
-    """hello() off the UI thread; emits the HelloResult or an error string."""
-    joined = Signal(object)
+    """Resolve a code (short or long) + hello() off the UI thread."""
+    joined = Signal(object, object)   # (RemJoin, HelloResult)
     failed = Signal(str)
 
-    def __init__(self, url, token, aliases=None, parent=None):
+    def __init__(self, code, url, parent=None):
         super().__init__(parent)
+        self._code = code
         self._url = url
-        self._token = token
-        self._aliases = aliases or []
 
     def run(self):
         try:
-            hello = RemClient(self._url, self._token).hello(self._aliases)
+            join = resolve_code(self._code, self._url)
+            hello = RemClient(join.url, join.token).hello()
         except RemError as e:
             self.failed.emit(str(e))
             return
-        self.joined.emit(hello)
+        self.joined.emit(join, hello)
 
 
 class RemSyncWorker(QThread):

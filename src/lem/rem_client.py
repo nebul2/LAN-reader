@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 
 JOIN_CODE_PREFIX = "REM1-"
+DEFAULT_REM_URL = "https://rem.greeningofstreaming.org"
 
 
 class RemError(Exception):
@@ -66,6 +67,17 @@ def parse_join_code(code: str) -> RemJoin:
         return RemJoin(url=data["u"].rstrip("/"), experiment_id=data["e"], token=data["t"])
     except Exception:
         raise RemError("This join code is malformed. Ask your operator for a fresh one.") from None
+
+
+def resolve_code(code: str, url: str = DEFAULT_REM_URL) -> RemJoin:
+    """Turn either a self-contained REM1-... code OR a short code into a
+    RemJoin. Short codes are resolved against `url` (the REM server)."""
+    code = (code or "").strip()
+    if code.startswith(JOIN_CODE_PREFIX):
+        return parse_join_code(code)   # self-contained, url ignored
+    if not code:
+        raise RemError("Enter a join code.")
+    return RemClient(url).resolve(code)
 
 
 class RemClient:
@@ -148,3 +160,8 @@ class RemClient:
 
     def status(self) -> dict:
         return self._get("/api/field/status")
+
+    def resolve(self, short_code: str) -> RemJoin:
+        data = self._get(f"/api/field/resolve/{short_code.strip()}")
+        return RemJoin(url=data.get("url", self.url).rstrip("/"),
+                       experiment_id=data["experiment_id"], token=data["token"])
