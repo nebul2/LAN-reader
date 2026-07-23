@@ -121,6 +121,38 @@ def test_plug_section_tapo_name_preserved_verbatim():
         assert tomllib.loads(text)["plugs"]["x"]["tapo_name"] == name
 
 
+def test_upsert_plugs_adds_and_refreshes(tmp_path):
+    import tomllib
+    from lem.scan import upsert_plugs
+    cfg = tmp_path / "config.toml"
+    cfg.write_text(
+        '[credentials.tapo]\nusername = "u"\npassword = "p"\n\n'
+        '[plugs.old-name]\ntype = "tapo"\nip = "10.0.0.7"\n\n'   # no tapo_name yet
+        '[plugs.fake1]\ntype = "fake"\n'
+    )
+    # Refresh 10.0.0.7 (new alias + nickname) and add a brand-new plug
+    added, refreshed = upsert_plugs(cfg, [
+        ("desk", "10.0.0.7", "Desk"),
+        ("rack", "10.0.0.11", "Rack"),
+    ])
+    assert (added, refreshed) == (1, 1)
+    parsed = tomllib.loads(cfg.read_text())
+    assert "old-name" not in parsed["plugs"]              # refreshed in place
+    assert parsed["plugs"]["desk"] == {"type": "tapo", "ip": "10.0.0.7", "tapo_name": "Desk"}
+    assert parsed["plugs"]["rack"]["tapo_name"] == "Rack"
+    assert parsed["plugs"]["fake1"] == {"type": "fake"}   # untouched
+    assert parsed["credentials"]["tapo"]["username"] == "u"  # untouched
+
+
+def test_upsert_plugs_creates_missing_config(tmp_path):
+    import tomllib
+    from lem.scan import upsert_plugs
+    cfg = tmp_path / "sub" / "config.toml"
+    added, refreshed = upsert_plugs(cfg, [("desk", "10.0.0.7", "Desk")])
+    assert (added, refreshed) == (1, 0)
+    assert tomllib.loads(cfg.read_text())["plugs"]["desk"]["ip"] == "10.0.0.7"
+
+
 def test_rem_section_write_and_remove(tmp_path):
     import tomllib
     from lem.scan import remove_rem_section, write_rem_section

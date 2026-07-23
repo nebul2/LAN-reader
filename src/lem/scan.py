@@ -260,6 +260,48 @@ def write_plugs(
     config_path.write_text(text)
 
 
+def _plugs_by_ip(config_path: Path) -> dict[str, str]:
+    """Map ip -> existing alias for tapo plugs already in the config."""
+    if not config_path.exists():
+        return {}
+    try:
+        with open(config_path, "rb") as f:
+            raw = tomllib.load(f)
+    except Exception:
+        return {}
+    out = {}
+    for alias, p in (raw.get("plugs") or {}).items():
+        if isinstance(p, dict) and p.get("type") == "tapo" and p.get("ip"):
+            out[p["ip"]] = alias
+    return out
+
+
+def upsert_plugs(config_path: Path, entries: list[tuple]) -> tuple[int, int]:
+    """Add or refresh tapo plugs, matched by IP — non-destructive to plugs not
+    in `entries`, and to credentials/[rem]/comments. A plug already configured
+    at the same IP is replaced in place (refreshing its tapo_name and alias);
+    a new IP is appended. entries: (alias, ip[, tapo_name]). Returns
+    (added, refreshed)."""
+    existing_by_ip = _plugs_by_ip(config_path)
+    entry_ips = {e[1] for e in entries}
+    # Drop the old sections for any IP we're about to (re)write.
+    stale_aliases = {existing_by_ip[ip] for ip in entry_ips if ip in existing_by_ip}
+    text = config_path.read_text() if config_path.exists() else ""
+    if stale_aliases:
+        text = remove_plug_sections(text, stale_aliases)
+    added = refreshed = 0
+    for entry in entries:
+        alias, ip, *rest = entry
+        text += plug_section(alias, ip, rest[0] if rest else None)
+        if ip in existing_by_ip:
+            refreshed += 1
+        else:
+            added += 1
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(text)
+    return added, refreshed
+
+
 def new_config_text(username: str, password: str) -> str:
     return (
         "[defaults]\n"
@@ -319,24 +361,7 @@ def run_scan(subnet_arg: str, config_arg: Path | None, console: Console) -> int:
             return 1
 
     existing_plugs = config.plugs if config else {}
-    tapo_aliases = {a for a, p in existing_plugs.items() if p.type == "tapo"}
     ip_to_alias = {p.ip: a for a, p in existing_plugs.items() if p.type == "tapo"}
-
-    # Add or replace?
-    mode = "add"
-    if tapo_aliases:
-        console.print(
-            f"{config_path} already has {len(tapo_aliases)} tapo plug(s): "
-            f"{', '.join(sorted(tapo_aliases))}"
-        )
-        while True:
-            answer = _ask("[a]dd new plugs to it, [r]eplace its tapo plugs, or [q]uit? [a/r/q] ", "a").lower()
-            if answer in ("a", "r", "q"):
-                break
-        if answer == "q":
-            console.print("No changes made.")
-            return 0
-        mode = "replace" if answer == "r" else "add"
 
     # Scan
     found = asyncio.run(scan_network(network, username, password, console))
@@ -367,36 +392,38 @@ def run_scan(subnet_arg: str, config_arg: Path | None, console: Console) -> int:
     console.print(table)
     console.print()
 
-    # Accept / name / refuse each
-    taken = set(existing_plugs) - (tapo_aliases if mode == "replace" else set())
+    # Choose which to use / refresh. Plugs already configured at the same IP
+    # are refreshed in place (nickname re-read from the device); others are
+    # added. Nothing else in the config is touched (removal is a separate step).
+    taken = set(existing_plugs)
     accepted: list[tuple] = []  # (alias, ip, tapo_name)
     for d in found:
+        known = ip_to_alias.get(d["ip"])
+        verb = "Refresh" if known else "Add"
         label = f"{d['ip']} ({d['model']}" + (f", \"{d['nickname']}\"" if d["nickname"] else "") + ")"
-        if mode == "add" and d["ip"] in ip_to_alias:
-            console.print(f"  {label} — already configured as '{ip_to_alias[d['ip']]}', skipping")
-            continue
-        if _ask(f"Add {label}? [Y/n] ", "y").lower() not in ("y", "yes"):
+        if known:
+            label += f" [currently '{known}']"
+        if _ask(f"{verb} {label}? [Y/n] ", "y").lower() not in ("y", "yes"):
             continue
         # Auto-name the local handle from the Tapo nickname (the source of
         # truth). The nickname is stored verbatim as tapo_name and is what REM
-        # keys on; this alias is only a filename-safe slug of it.
+        # keys on; this alias is only a filename-safe slug of it. Reusing a
+        # refreshed plug's own current alias avoids a spurious rename.
+        pool = taken - ({known} if known else set())
         alias = unique_alias(
             sanitize_alias(d["nickname"]) if d["nickname"] else f"plug{d['ip'].rsplit('.', 1)[1]}",
-            taken,
+            pool,
         )
         taken.add(alias)
         console.print(f"  named '{alias}'  (Tapo nickname: \"{d['nickname'] or '—'}\")")
         accepted.append((alias, d["ip"], d.get("nickname") or None))
 
-    if not accepted and mode == "add":
-        console.print("No plugs added.")
+    if not accepted:
+        console.print("No changes made.")
         return 0
 
-    # Write the plug list (the file exists by now — created above if needed)
-    write_plugs(config_path, accepted, tapo_aliases if mode == "replace" else frozenset())
-
-    replaced = f" (replaced {len(tapo_aliases)})" if mode == "replace" else ""
-    console.print(f"\nWrote {len(accepted)} plug(s) to {config_path}{replaced}:")
+    added, refreshed = upsert_plugs(config_path, accepted)
+    console.print(f"\nWrote {config_path}: {added} added, {refreshed} refreshed.")
     for alias, ip, _tapo_name in accepted:
         console.print(f"  {alias:<16} {ip}")
     return 0

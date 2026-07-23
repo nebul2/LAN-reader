@@ -74,6 +74,7 @@ class MainWindow(QMainWindow):
         layout.addWidget(QLabel("Plugs (tick the ones to measure — double-click to rename):"))
         self.plug_list = QListWidget()
         self.plug_list.setMaximumHeight(160)
+        self.plug_list.setSelectionMode(QListWidget.ExtendedSelection)
         self.plug_list.itemDoubleClicked.connect(self.rename_plug)
         layout.addWidget(self.plug_list)
 
@@ -81,6 +82,11 @@ class MainWindow(QMainWindow):
         self.scan_button = QPushButton("Scan network for plugs…")
         self.scan_button.clicked.connect(self.scan_clicked)
         scan_row.addWidget(self.scan_button)
+        self.remove_button = QPushButton("Remove selected")
+        self.remove_button.setToolTip("Delete the highlighted plug(s) from the config "
+                                      "(highlight a row; Shift/Cmd-click for several)")
+        self.remove_button.clicked.connect(self.remove_selected_plugs)
+        scan_row.addWidget(self.remove_button)
         reload_button = QPushButton("Reload config")
         reload_button.clicked.connect(self.reload_config)
         scan_row.addWidget(reload_button)
@@ -196,6 +202,28 @@ class MainWindow(QMainWindow):
                 out.append(item.data(Qt.UserRole))
         return out
 
+    def remove_selected_plugs(self):
+        if self.worker is not None or self.config is None:
+            return
+        aliases = [i.data(Qt.UserRole) for i in self.plug_list.selectedItems()]
+        if not aliases:
+            QMessageBox.information(self, "Nothing selected",
+                                    "Highlight one or more plugs in the list first "
+                                    "(click a row; Shift/Cmd-click for several).")
+            return
+        listing = ", ".join(aliases)
+        if QMessageBox.question(
+            self, "Remove plugs?",
+            f"Remove {len(aliases)} plug(s) from the config?\n\n{listing}\n\n"
+            "This only edits your local config — it doesn't touch the devices.",
+        ) != QMessageBox.Yes:
+            return
+        self.config_path.write_text(
+            scan_mod.remove_plug_sections(self.config_path.read_text(), set(aliases))
+        )
+        self.reload_config()
+        self.status_label.setText(f"Removed {len(aliases)} plug(s): {listing}")
+
     def rename_plug(self, item):
         if self.worker is not None or self.config is None:
             return
@@ -266,6 +294,7 @@ class MainWindow(QMainWindow):
         self.start_button.setEnabled(False)
         self.stop_button.setEnabled(True)
         self.scan_button.setEnabled(False)
+        self.remove_button.setEnabled(False)
         if duration is None:
             self.progress.setRange(0, 0)  # busy indicator
         else:
@@ -309,6 +338,7 @@ class MainWindow(QMainWindow):
         self.start_button.setEnabled(True)
         self.stop_button.setEnabled(False)
         self.scan_button.setEnabled(True)
+        self.remove_button.setEnabled(True)
         self.progress.setRange(0, 1000)
         self.worker = None
 
@@ -409,16 +439,13 @@ class MainWindow(QMainWindow):
         note = scan_mod.ensure_credentials_saved(self.config_path, self._scan_raw, username, password)
 
         existing = self.config.plugs if self.config else {}
-        tapo_aliases = {a for a, p in existing.items() if p.type == "tapo"}
         ip_to_alias = {p.ip: a for a, p in existing.items() if p.type == "tapo"}
-        dialog = ScanResultsDialog(found, set(existing), tapo_aliases, ip_to_alias, self)
+        dialog = ScanResultsDialog(found, set(existing), ip_to_alias, self)
         if dialog.exec():
-            mode, accepted = dialog.selection()
-            if accepted or mode == "replace":
-                scan_mod.write_plugs(
-                    self.config_path, accepted,
-                    tapo_aliases if mode == "replace" else frozenset(),
-                )
+            accepted = dialog.selection()
+            if accepted:
+                added, refreshed = scan_mod.upsert_plugs(self.config_path, accepted)
+                note = (note + "  " if note else "") + f"{added} added, {refreshed} refreshed."
         self.reload_config()
         if note:
             self.status_label.setText(note + "  " + self.status_label.text())
