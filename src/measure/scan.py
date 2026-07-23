@@ -161,6 +161,15 @@ def remove_plug_sections(text: str, aliases: set[str]) -> str:
     return "".join(out)
 
 
+def rename_plug_section(text: str, old: str, new: str) -> str:
+    """Rewrite a [plugs.old] header to [plugs.new], leaving its body intact."""
+    return re.sub(
+        rf"(?m)^(\s*\[plugs\.){re.escape(old)}(\]\s*)$",
+        rf"\g<1>{new}\g<2>",
+        text,
+    )
+
+
 def plug_section(alias: str, ip: str) -> str:
     return f'\n[plugs.{alias}]\ntype = "tapo"\nip   = "{ip}"\n'
 

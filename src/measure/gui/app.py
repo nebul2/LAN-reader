@@ -63,9 +63,10 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(central)
         layout = QVBoxLayout(central)
 
-        layout.addWidget(QLabel("Plugs (tick the ones to measure):"))
+        layout.addWidget(QLabel("Plugs (tick the ones to measure — double-click to rename):"))
         self.plug_list = QListWidget()
         self.plug_list.setMaximumHeight(160)
+        self.plug_list.itemDoubleClicked.connect(self.rename_plug)
         layout.addWidget(self.plug_list)
 
         scan_row = QHBoxLayout()
@@ -171,6 +172,25 @@ class MainWindow(QMainWindow):
             if item.checkState() == Qt.Checked:
                 out.append(item.data(Qt.UserRole))
         return out
+
+    def rename_plug(self, item):
+        if self.worker is not None or self.config is None:
+            return
+        old = item.data(Qt.UserRole)
+        new, ok = QInputDialog.getText(self, "Rename plug", f'New name for "{old}":', text=old)
+        if not ok or not new.strip():
+            return
+        new = scan_mod.sanitize_alias(new)
+        if new == old:
+            return
+        if new in self.config.plugs:
+            QMessageBox.warning(self, "Name in use", f'"{new}" is already used by another plug.')
+            return
+        self.config_path.write_text(
+            scan_mod.rename_plug_section(self.config_path.read_text(), old, new)
+        )
+        self.reload_config()
+        self.status_label.setText(f'Renamed "{old}" to "{new}".')
 
     # ------------------------------------------------------------- measurement
 

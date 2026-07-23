@@ -78,6 +78,21 @@ def test_remove_plug_sections_selective():
     assert "10.0.0.11" in out
 
 
+def test_rename_plug_section():
+    from measure.scan import rename_plug_section
+    import tomllib
+    out = rename_plug_section(CONFIG, "desk", "bench")
+    parsed = tomllib.loads(out)
+    assert "desk" not in parsed["plugs"]
+    assert parsed["plugs"]["bench"] == {"type": "tapo", "ip": "10.0.0.7"}
+    assert parsed["plugs"]["rack"]["ip"] == "10.0.0.11"  # others untouched
+
+
+def test_rename_plug_section_no_match_is_noop():
+    from measure.scan import rename_plug_section
+    assert rename_plug_section(CONFIG, "nonexistent", "x") == CONFIG
+
+
 def test_plug_section_roundtrip():
     import tomllib
     text = CONFIG + plug_section("bench", "10.0.0.20")
