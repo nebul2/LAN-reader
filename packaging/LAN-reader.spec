@@ -62,5 +62,10 @@ if sys.platform == "darwin":
             "NSHighResolutionCapable": True,
             "CFBundleShortVersionString": "0.1.0",
             "NSHumanReadableCopyright": "Greening of Streaming",
+            # Without this, macOS silently blocks all LAN connections (no
+            # prompt), and scans/measurements find nothing.
+            "NSLocalNetworkUsageDescription":
+                "LAN-reader talks to smart plugs on your local network to "
+                "discover them and measure their power consumption.",
         },
     )

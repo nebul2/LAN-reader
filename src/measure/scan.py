@@ -52,6 +52,10 @@ def resolve_network(subnet_arg: str | None) -> ipaddress.IPv4Network:
     """Turn a --scan argument ('auto', None, or a CIDR) into a network.
     Raises ValueError with a user-facing message."""
     if subnet_arg and subnet_arg != "auto":
+        # A bare address means "its /24" — scanning exactly one host is
+        # never what a lab user typing 192.168.1.0 intends.
+        if "/" not in subnet_arg:
+            subnet_arg += "/24"
         network = ipaddress.ip_network(subnet_arg, strict=False)
     else:
         try:

@@ -1,11 +1,28 @@
 import textwrap
 
+import pytest
+
 from measure.scan import (
     plug_section,
     remove_plug_sections,
+    resolve_network,
     sanitize_alias,
     unique_alias,
 )
+
+
+def test_resolve_network_bare_address_means_slash24():
+    assert str(resolve_network("192.168.1.0")) == "192.168.1.0/24"
+    assert str(resolve_network("192.168.1.37")) == "192.168.1.0/24"
+
+
+def test_resolve_network_explicit_prefix_kept():
+    assert str(resolve_network("10.0.0.0/28")) == "10.0.0.0/28"
+
+
+def test_resolve_network_too_large():
+    with pytest.raises(ValueError):
+        resolve_network("10.0.0.0/8")
 
 
 def test_sanitize_alias():

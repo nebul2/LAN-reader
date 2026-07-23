@@ -52,6 +52,9 @@ class MainWindow(QMainWindow):
         self.current_sink = None
         self.start_time = None
         self.run_duration = None
+        # Credentials typed this session, kept so a failed scan doesn't
+        # re-prompt (they're only written to config after a successful scan).
+        self._session_creds = None
 
         self.setWindowTitle("LAN-reader")
         self.resize(680, 640)
@@ -279,6 +282,8 @@ class MainWindow(QMainWindow):
         creds = raw.get("credentials", {}).get("tapo", {})
         username = os.environ.get("TAPO_USERNAME") or creds.get("username") or ""
         password = os.environ.get("TAPO_PASSWORD") or creds.get("password") or ""
+        if (not username or not password) and self._session_creds:
+            username, password = self._session_creds
         if not username or not password:
             username, ok = QInputDialog.getText(
                 self, "Tapo account", "Tapo cloud username (email):", text=username
@@ -290,6 +295,7 @@ class MainWindow(QMainWindow):
             )
             if not ok or not password:
                 return
+            self._session_creds = (username, password)
 
         try:
             default = str(scan_mod.default_network())
