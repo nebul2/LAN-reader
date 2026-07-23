@@ -26,6 +26,18 @@ class PlugConfig:
     type: str
     ip: str
     credentials: dict  # kwargs passed to BaseDevice.connect()
+    # Exact Tapo nickname, verbatim (may hold spaces/unicode). This is the
+    # device's identity in REM — the cloud collector uses the same string —
+    # so uploads must use it, never the sanitized local alias.
+    tapo_name: str | None = None
+
+
+@dataclass(frozen=True)
+class RemConfig:
+    url: str
+    token: str
+    experiment_id: str
+    experiment_name: str = ""
 
 
 @dataclass(frozen=True)
@@ -34,13 +46,20 @@ class Config:
     duration: str
     results_dir: Path
     plugs: dict[str, PlugConfig]
+    rem: RemConfig | None = None
+
+
+def upload_alias(plug: PlugConfig) -> str:
+    """The alias to report to REM: the Tapo nickname when known (matching the
+    cloud collector), else the local alias (fake plugs, hand-edited configs)."""
+    return plug.tapo_name or plug.alias
 
 
 def _credentials_for(plug_type: str, plug_raw: dict, creds_raw: dict) -> dict:
-    # Any per-plug key besides type/ip is passed to the device's connect()
-    # (credential overrides, fake fail_rate, a future PDU's outlet number, ...).
+    # Any per-plug key besides type/ip/tapo_name is passed to the device's
+    # connect() (credential overrides, fake fail_rate, a PDU's outlet, ...).
     base = dict(creds_raw.get(plug_type, {}))
-    base.update({k: v for k, v in plug_raw.items() if k not in ("type", "ip")})
+    base.update({k: v for k, v in plug_raw.items() if k not in ("type", "ip", "tapo_name")})
     if plug_type == "tapo":
         if os.environ.get("TAPO_USERNAME"):
             base["username"] = os.environ["TAPO_USERNAME"]
@@ -82,6 +101,20 @@ def load_config(path: Path | None = None) -> Config:
             type=plug_type,
             ip=ip,
             credentials=_credentials_for(plug_type, plug_raw, creds_raw),
+            tapo_name=plug_raw.get("tapo_name") or None,
+        )
+
+    rem = None
+    rem_raw = raw.get("rem")
+    if rem_raw:
+        for key in ("url", "token", "experiment_id"):
+            if not rem_raw.get(key):
+                raise ConfigError(f"[rem] is missing '{key}' — re-join with the join code")
+        rem = RemConfig(
+            url=str(rem_raw["url"]).rstrip("/"),
+            token=str(rem_raw["token"]),
+            experiment_id=str(rem_raw["experiment_id"]),
+            experiment_name=str(rem_raw.get("experiment_name", "")),
         )
 
     return Config(
@@ -89,4 +122,5 @@ def load_config(path: Path | None = None) -> Config:
         duration=str(defaults.get("duration", "10m")),
         results_dir=Path(defaults.get("results_dir", "results")),
         plugs=plugs,
+        rem=rem,
     )

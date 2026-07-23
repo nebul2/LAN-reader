@@ -101,3 +101,51 @@ def test_config_missing_type(tmp_path):
 def test_config_missing_file(tmp_path):
     with pytest.raises(ConfigError):
         load_config(tmp_path / "nope.toml")
+
+
+def test_tapo_name_parsed_and_kept_out_of_credentials(tmp_path):
+    path = _write_config(tmp_path, """
+        [plugs.desk]
+        type = "tapo"
+        ip = "10.0.0.7"
+        tapo_name = "Lyon TV"
+        username = "u@example.com"
+        password = "pw"
+    """)
+    from lem.config import upload_alias
+    config = load_config(path)
+    plug = config.plugs["desk"]
+    assert plug.tapo_name == "Lyon TV"
+    assert "tapo_name" not in plug.credentials  # must not reach connect()
+    assert upload_alias(plug) == "Lyon TV"
+
+
+def test_upload_alias_falls_back_to_local_alias(tmp_path):
+    path = _write_config(tmp_path, """
+        [plugs.fake1]
+        type = "fake"
+    """)
+    from lem.config import upload_alias
+    assert upload_alias(load_config(path).plugs["fake1"]) == "fake1"
+
+
+def test_rem_section_parsing(tmp_path):
+    path = _write_config(tmp_path, """
+        [rem]
+        url = "https://rem.example.org/"
+        token = "tok"
+        experiment_id = "tv-standby"
+        experiment_name = "TV Standby"
+    """)
+    config = load_config(path)
+    assert config.rem.url == "https://rem.example.org"  # trailing slash stripped
+    assert config.rem.experiment_id == "tv-standby"
+
+
+def test_rem_section_incomplete_raises(tmp_path):
+    path = _write_config(tmp_path, """
+        [rem]
+        url = "https://rem.example.org"
+    """)
+    with pytest.raises(ConfigError):
+        load_config(path)

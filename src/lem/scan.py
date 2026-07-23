@@ -14,6 +14,7 @@ import asyncio
 import contextlib
 import getpass
 import ipaddress
+import json
 import os
 import re
 import socket
@@ -170,8 +171,43 @@ def rename_plug_section(text: str, old: str, new: str) -> str:
     )
 
 
-def plug_section(alias: str, ip: str) -> str:
-    return f'\n[plugs.{alias}]\ntype = "tapo"\nip   = "{ip}"\n'
+def plug_section(alias: str, ip: str, tapo_name: str | None = None) -> str:
+    section = f'\n[plugs.{alias}]\ntype = "tapo"\nip   = "{ip}"\n'
+    if tapo_name:
+        # Verbatim Tapo nickname — REM's identity for this device. JSON string
+        # escaping is valid TOML basic-string escaping (quotes, unicode, \).
+        section += f"tapo_name = {json.dumps(tapo_name)}\n"
+    return section
+
+
+def remove_rem_section(text: str) -> str:
+    """Drop the [rem] table (header + body), leaving everything else intact."""
+    out, skipping = [], False
+    for line in text.splitlines(keepends=True):
+        if re.match(r"\s*\[rem\]\s*$", line):
+            skipping = True
+            continue
+        if re.match(r"\s*\[", line):
+            skipping = False
+        if not skipping:
+            out.append(line)
+    return "".join(out)
+
+
+def write_rem_section(
+    config_path: Path, url: str, token: str, experiment_id: str, experiment_name: str = ""
+) -> None:
+    """Write/replace the [rem] connection in the config, preserving the rest."""
+    text = remove_rem_section(config_path.read_text()) if config_path.exists() else ""
+    text += (
+        "\n[rem]\n"
+        f"url = {json.dumps(url.rstrip('/'))}\n"
+        f"token = {json.dumps(token)}\n"
+        f"experiment_id = {json.dumps(experiment_id)}\n"
+        f"experiment_name = {json.dumps(experiment_name)}\n"
+    )
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+    config_path.write_text(text)
 
 
 def ensure_credentials_saved(
@@ -197,14 +233,16 @@ def ensure_credentials_saved(
 
 
 def write_plugs(
-    config_path: Path, accepted: list[tuple[str, str]], remove_aliases: set[str] = frozenset()
+    config_path: Path, accepted: list[tuple], remove_aliases: set[str] = frozenset()
 ) -> None:
-    """Append accepted (alias, ip) tapo plugs, optionally removing old sections first."""
+    """Append accepted (alias, ip[, tapo_name]) tapo plugs, optionally
+    removing old sections first."""
     text = config_path.read_text()
     if remove_aliases:
         text = remove_plug_sections(text, set(remove_aliases))
-    for alias, ip in accepted:
-        text += plug_section(alias, ip)
+    for entry in accepted:
+        alias, ip, *rest = entry
+        text += plug_section(alias, ip, rest[0] if rest else None)
     config_path.write_text(text)
 
 
@@ -337,7 +375,7 @@ def run_scan(subnet_arg: str, config_arg: Path | None, console: Console) -> int:
             else:
                 alias = candidate
         taken.add(alias)
-        accepted.append((alias, d["ip"]))
+        accepted.append((alias, d["ip"], d.get("nickname") or None))
 
     if not accepted and mode == "add":
         console.print("No plugs added.")
@@ -348,6 +386,6 @@ def run_scan(subnet_arg: str, config_arg: Path | None, console: Console) -> int:
 
     replaced = f" (replaced {len(tapo_aliases)})" if mode == "replace" else ""
     console.print(f"\nWrote {len(accepted)} plug(s) to {config_path}{replaced}:")
-    for alias, ip in accepted:
+    for alias, ip, _tapo_name in accepted:
         console.print(f"  {alias:<16} {ip}")
     return 0

@@ -98,3 +98,34 @@ def test_plug_section_roundtrip():
     text = CONFIG + plug_section("bench", "10.0.0.20")
     parsed = tomllib.loads(text)
     assert parsed["plugs"]["bench"] == {"type": "tapo", "ip": "10.0.0.20"}
+
+
+def test_plug_section_tapo_name_preserved_verbatim():
+    import tomllib
+    for name in ['Lyon "Salon" TV', "Décodeur n°2 çà", "back\\slash"]:
+        text = CONFIG + plug_section("x", "10.0.0.9", name)
+        assert tomllib.loads(text)["plugs"]["x"]["tapo_name"] == name
+
+
+def test_rem_section_write_and_remove(tmp_path):
+    import tomllib
+    from lem.scan import remove_rem_section, write_rem_section
+    cfg = tmp_path / "config.toml"
+    cfg.write_text(CONFIG)
+    write_rem_section(cfg, "https://rem.example.org/", "tok123", "tv-standby", "TV Standby")
+    parsed = tomllib.loads(cfg.read_text())
+    assert parsed["rem"] == {
+        "url": "https://rem.example.org",
+        "token": "tok123",
+        "experiment_id": "tv-standby",
+        "experiment_name": "TV Standby",
+    }
+    assert parsed["plugs"]["desk"]["ip"] == "10.0.0.7"  # rest untouched
+    # Re-join replaces rather than duplicates
+    write_rem_section(cfg, "https://other.example", "tok456", "exp2")
+    parsed = tomllib.loads(cfg.read_text())
+    assert parsed["rem"]["token"] == "tok456"
+    # Leave removes the section, keeps everything else
+    out = remove_rem_section(cfg.read_text())
+    parsed = tomllib.loads(out)
+    assert "rem" not in parsed and "desk" in parsed["plugs"]

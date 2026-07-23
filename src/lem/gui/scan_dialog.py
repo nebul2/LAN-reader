@@ -92,8 +92,9 @@ class ScanResultsDialog(QDialog):
                     label = d["ip"] + (f'  "{d["nickname"]}"' if d["nickname"] else "")
                     self.table.item(row, 1).setText(label)
 
-    def selection(self) -> tuple[str, list[tuple[str, str]]]:
-        """Returns (mode, [(alias, ip), ...]) with aliases sanitized and unique."""
+    def selection(self) -> tuple[str, list[tuple]]:
+        """Returns (mode, [(alias, ip, tapo_name), ...]) with aliases
+        sanitized and unique; tapo_name is the verbatim Tapo nickname."""
         mode = self.mode()
         taken = set(self._non_tapo_aliases)
         if mode == "add":
@@ -105,5 +106,5 @@ class ScanResultsDialog(QDialog):
             base = sanitize_alias(self._alias_edits[row].text())
             alias = unique_alias(base, taken)
             taken.add(alias)
-            accepted.append((alias, d["ip"]))
+            accepted.append((alias, d["ip"], d.get("nickname") or None))
         return mode, accepted
