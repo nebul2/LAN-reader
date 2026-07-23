@@ -1,0 +1,66 @@
+name: test-and-build
+
+# Guarantees the macOS/Windows executables stay in sync with the code: every
+# push runs the same test + smoke suite AND rebuilds the app, smoke-testing the
+# packaged binary. A feature added to the script that breaks the app fails here.
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[gui,dev]"
+      - name: Unit tests
+        run: pytest -q
+      - name: GUI smoke (offscreen)
+        env:
+          QT_QPA_PLATFORM: offscreen
+        run: python scripts/gui_smoke.py
+
+  build:
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            artifact: LEM-macos
+            path: dist/LEM.app
+          - os: windows-latest
+            artifact: LEM-windows
+            path: dist/LEM
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -e ".[gui]" pyinstaller
+      - name: Build app
+        run: pyinstaller packaging/lem.spec --noconfirm --distpath dist --workpath build
+      - name: Smoke-test the packaged app (macOS)
+        if: runner.os == 'macOS'
+        env:
+          LEM_SMOKE: "1"
+          QT_QPA_PLATFORM: offscreen
+        run: ./dist/LEM.app/Contents/MacOS/LEM
+      - name: Smoke-test the packaged app (Windows)
+        if: runner.os == 'Windows'
+        env:
+          LEM_SMOKE: "1"
+          QT_QPA_PLATFORM: offscreen
+        run: ./dist/LEM/LEM.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.path }}

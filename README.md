@@ -103,6 +103,40 @@ machine (PyInstaller doesn't cross-compile) — CI workflow to follow. Signing/
 notarization steps are sketched in `packaging/build_macos.sh` and will be
 enabled once the Greening of Streaming Apple Developer account is active.
 
+## Sending data to REM
+
+LEM can stream measurements into a [REM](https://github.com/nebul2/REM)
+experiment while they run — the local companion to REM's cloud collector.
+Identity is the plug's **Tapo nickname**, exactly what REM's collector uses, so
+local and cloud data for the same plug merge automatically.
+
+Your operator creates an experiment in REM and gives you a **join code**
+(`REM1-…`). Then:
+
+```sh
+lem rem join REM1-xxxx…      # connect (also sets the measurement cadence)
+lem --all --duration 30m     # measure — data streams to REM as it's captured
+lem rem status               # connection + how much has been uploaded
+lem rem sync                 # upload any runs that REM missed (offline catch-up)
+lem rem leave                # disconnect
+```
+
+In the desktop app, the **Connect to REM…** button does the same: paste the
+code, then the button shows the experiment name and each run streams up with a
+live uploaded/behind counter.
+
+Guarantees worth knowing:
+
+- **Local by design.** Even when connected to REM, LEM measures plugs over the
+  LAN and never calls the TP-Link cloud. While LEM is measuring a plug, REM
+  pauses its own cloud polling of it (saving TP-Link API calls) and resumes
+  automatically if LEM stops.
+- **Nothing is lost.** The local CSV is the source of truth; a `.sync` sidecar
+  tracks what REM has acknowledged. A network drop just delays upload — LEM
+  catches up, and `lem rem sync` backfills whole runs measured offline.
+- **REM sets the pace.** The experiment's cadence becomes LEM's sample interval
+  (override with `--interval` if you must).
+
 ## Extending
 
 - **New device type** (plug, PDU): add one module in `src/lem/devices/`
