@@ -59,6 +59,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="lem",
         description="LEM (Local Energy Measurement) — measure power from smart plugs on the LAN.",
+        epilog="REM (send data to a REM experiment): "
+               "lem rem join <code> | status | sync | export | leave  "
+               "(run 'lem rem -h' for details)",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--plugs", help="comma-separated plug aliases from the config")
