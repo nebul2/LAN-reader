@@ -127,6 +127,36 @@ def _cmd_sync(args, console: Console) -> int:
     return 0
 
 
+def _cmd_export(args, console: Console) -> int:
+    """Write a REM-ready CSV (timestamp,alias,power_w with the Tapo nickname)
+    so a run can be hand-imported at REM even without this machine's config."""
+    import csv
+    path = _config_path(args)
+    try:
+        config = load_config(path)
+    except ConfigError as e:
+        console.print(f"[red]Error:[/red] {e}")
+        return 1
+    alias_map = {p.alias: upload_alias(p) for p in config.plugs.values()}
+    targets = [Path(args.file)] if args.file else sorted(config.results_dir.glob("*_combined.csv"))
+    if not targets:
+        console.print("No combined CSVs found.")
+        return 1
+    for combined in targets:
+        out = combined.with_name(combined.name.replace("_combined.csv", "_rem.csv"))
+        with open(combined) as fin, open(out, "w", newline="") as fout:
+            r = csv.reader(fin)
+            w = csv.writer(fout)
+            header = next(r, None)
+            w.writerow(["timestamp", "alias", "power_w"])
+            for row in r:
+                if len(row) == 3:
+                    ts, alias, power = row
+                    w.writerow([ts, alias_map.get(alias, alias), power])
+        console.print(f"  wrote {out.name}  (REM identity / Tapo nicknames)")
+    return 0
+
+
 def main(argv: list[str]) -> int:
     console = Console()
     parser = argparse.ArgumentParser(prog="lem rem", description="Connect LEM to a REM experiment.")
@@ -137,10 +167,12 @@ def main(argv: list[str]) -> int:
     sub.add_parser("status", help="show REM connection and upload status")
     p_sync = sub.add_parser("sync", help="upload any local runs not yet in REM")
     p_sync.add_argument("--file", help="upload a specific combined CSV")
+    p_export = sub.add_parser("export", help="write REM-ready CSV(s) (Tapo nicknames) for hand-import")
+    p_export.add_argument("--file", help="export a specific combined CSV")
     sub.add_parser("leave", help="disconnect from the REM experiment")
 
     args = parser.parse_args(argv)
     return {
         "join": _cmd_join, "leave": _cmd_leave,
-        "status": _cmd_status, "sync": _cmd_sync,
+        "status": _cmd_status, "sync": _cmd_sync, "export": _cmd_export,
     }[args.cmd](args, console)
