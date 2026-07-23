@@ -142,6 +142,30 @@ def test_rem_section_parsing(tmp_path):
     assert config.rem.experiment_id == "tv-standby"
 
 
+def test_nickname_warnings(tmp_path):
+    from lem.config import nickname_warnings
+    path = _write_config(tmp_path, """
+        [plugs.a]
+        type = "tapo"
+        ip = "10.0.0.1"
+        tapo_name = "TV"
+        [plugs.b]
+        type = "tapo"
+        ip = "10.0.0.2"
+        tapo_name = "TV"
+        [plugs.c]
+        type = "tapo"
+        ip = "10.0.0.3"
+        [plugs.fake1]
+        type = "fake"
+    """)
+    warns = nickname_warnings(load_config(path).plugs.values())
+    text = " ".join(warns)
+    assert "Duplicate" in text and "TV" in text     # a & b collide
+    assert "'c' has no Tapo nickname" in text        # c blank
+    assert "fake1" not in text                        # fakes ignored
+
+
 def test_rem_section_incomplete_raises(tmp_path):
     path = _write_config(tmp_path, """
         [rem]

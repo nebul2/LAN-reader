@@ -288,6 +288,14 @@ class MainWindow(QMainWindow):
         uploader_spec = None
         self.rem_state = None
         if self.config.rem:
+            from lem.config import nickname_warnings
+            warns = nickname_warnings(plugs)
+            if warns and QMessageBox.warning(
+                self, "Naming issue",
+                "\n\n".join(warns) + "\n\nMeasure anyway?",
+                QMessageBox.Yes | QMessageBox.No, QMessageBox.Yes,
+            ) != QMessageBox.Yes:
+                return
             client = RemClient(self.config.rem.url, self.config.rem.token)
             client.experiment_id = self.config.rem.experiment_id
             alias_map = {p.alias: upload_alias(p) for p in plugs}

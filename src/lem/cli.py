@@ -152,6 +152,9 @@ def main(argv: list[str] | None = None) -> int:
     rem_client = None
     rem_state = None
     if config.rem:
+        from lem.config import nickname_warnings
+        for w in nickname_warnings(plugs):
+            console.print(f"[yellow]⚠ {w}[/yellow]")
         from lem.rem_client import RemClient, RemError
         from lem.uploader import UploaderState
         rem_client = RemClient(config.rem.url, config.rem.token)

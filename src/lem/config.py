@@ -55,6 +55,25 @@ def upload_alias(plug: PlugConfig) -> str:
     return plug.tapo_name or plug.alias
 
 
+def nickname_warnings(plugs) -> list[str]:
+    """Identity problems that would confuse REM: duplicate or blank Tapo
+    nicknames (REM keys on the nickname, so these merge or misidentify)."""
+    out = []
+    by_name: dict[str, list[str]] = {}
+    for p in plugs:
+        if p.type != "tapo":
+            continue
+        if not p.tapo_name:
+            out.append(f"'{p.alias}' has no Tapo nickname — REM can't match it to the cloud device.")
+        else:
+            by_name.setdefault(p.tapo_name, []).append(p.alias)
+    for name, aliases in by_name.items():
+        if len(aliases) > 1:
+            out.append(f"Duplicate Tapo nickname \"{name}\" on {', '.join(aliases)} "
+                       "— their data will merge in REM. Rename one in the Tapo app.")
+    return out
+
+
 def _credentials_for(plug_type: str, plug_raw: dict, creds_raw: dict) -> dict:
     # Any per-plug key besides type/ip/tapo_name is passed to the device's
     # connect() (credential overrides, fake fail_rate, a PDU's outlet, ...).
