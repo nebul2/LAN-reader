@@ -72,10 +72,10 @@ class MainWindow(QMainWindow):
         layout = QVBoxLayout(central)
 
         layout.addWidget(QLabel("Plugs — tick to select, then Start to measure or "
-                                "Remove to delete (double-click to rename):"))
+                                "Remove to delete (names come from the plug):"))
         self.plug_list = QListWidget()
         self.plug_list.setMaximumHeight(160)
-        self.plug_list.itemDoubleClicked.connect(self.rename_plug)
+        self.plug_list.itemDoubleClicked.connect(self.explain_naming)
         layout.addWidget(self.plug_list)
 
         scan_row = QHBoxLayout()
@@ -170,7 +170,11 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Config error", str(e))
             return
         for alias, plug in self.config.plugs.items():
-            item = QListWidgetItem(f"{alias}   ({plug.type}, {plug.ip})")
+            # Show the Tapo nickname (the source of truth) when we have it;
+            # fall back to the local handle for fakes / hand-edited entries.
+            name = plug.tapo_name or alias
+            where = plug.ip if plug.type == "tapo" else plug.type
+            item = QListWidgetItem(f"{name}    ({where})")
             item.setData(Qt.UserRole, alias)
             item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
             item.setCheckState(Qt.Unchecked)
@@ -223,24 +227,15 @@ class MainWindow(QMainWindow):
         self.reload_config()
         self.status_label.setText(f"Removed {len(aliases)} plug(s): {listing}")
 
-    def rename_plug(self, item):
-        if self.worker is not None or self.config is None:
-            return
-        old = item.data(Qt.UserRole)
-        new, ok = QInputDialog.getText(self, "Rename plug", f'New name for "{old}":', text=old)
-        if not ok or not new.strip():
-            return
-        new = scan_mod.sanitize_alias(new)
-        if new == old:
-            return
-        if new in self.config.plugs:
-            QMessageBox.warning(self, "Name in use", f'"{new}" is already used by another plug.')
-            return
-        self.config_path.write_text(
-            scan_mod.rename_plug_section(self.config_path.read_text(), old, new)
+    def explain_naming(self, item):
+        QMessageBox.information(
+            self, "Plug names",
+            "A plug's name is its Tapo nickname — the same name shown in the "
+            "TP-Link Tapo app, and the identity REM uses. LEM reads it from the "
+            "device and can't change it.\n\n"
+            "To rename a plug, change its nickname in the Tapo app, then re-scan "
+            "here to pick up the new name.",
         )
-        self.reload_config()
-        self.status_label.setText(f'Renamed "{old}" to "{new}".')
 
     # ------------------------------------------------------------- measurement
 
