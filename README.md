@@ -17,6 +17,13 @@ and `dual_measure_tool` — no web server, one command (or one double-click).
   (`timestamp,alias,power_w`) map 1:1 to REM's `gos_rem(time, alias, power_watts)`
   table.
 
+## Download (prebuilt apps)
+
+Non-technical testers: grab the latest signed-later build from
+**[Releases](https://github.com/nebul2/LEM/releases)** — `LEM-macos.zip`
+(macOS) or `LEM-windows.zip` (Windows). No Python needed. (Unsigned for now,
+so macOS/Windows will warn on first launch — right-click → Open / "Run anyway".)
+
 ## Install (CLI)
 
 ```sh
