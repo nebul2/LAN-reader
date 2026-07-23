@@ -88,6 +88,20 @@ def test_rename_plug_section():
     assert parsed["plugs"]["rack"]["ip"] == "10.0.0.11"  # others untouched
 
 
+def test_decode_tapo_nickname():
+    from lem.scan import _decode_tapo_nickname
+    # Real base64-encoded nicknames from Tapo's local API
+    assert _decode_tapo_nickname("TGFiLUE=") == "Lab-A"
+    assert _decode_tapo_nickname("QmVuMi01NS1MRy1PTEVELUMy") == "Ben2-55-LG-OLED-C2"
+    assert _decode_tapo_nickname("Z29zMS1zZXJ2ZXI=") == "gos1-server"
+    # Unicode survives the round-trip
+    import base64
+    assert _decode_tapo_nickname(base64.b64encode("Décodeur".encode()).decode()) == "Décodeur"
+    # Non-base64 (already decoded) falls back to raw; empty stays empty
+    assert _decode_tapo_nickname("Lab-A") == "Lab-A"      # hyphen isn't base64
+    assert _decode_tapo_nickname("") == ""
+
+
 def test_rename_plug_section_no_match_is_noop():
     from lem.scan import rename_plug_section
     assert rename_plug_section(CONFIG, "nonexistent", "x") == CONFIG

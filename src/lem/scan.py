@@ -87,6 +87,20 @@ async def _port_open(ip: str, sem: asyncio.Semaphore) -> bool:
         return True
 
 
+def _decode_tapo_nickname(raw: str) -> str:
+    """Tapo's LOCAL API returns the nickname base64-encoded (e.g. 'TGFiLUE='),
+    but the TP-Link CLOUD API that REM's collector uses returns it decoded
+    ('Lab-A'). Decode here so LEM's alias matches REM's exactly. Fall back to
+    the raw value if it isn't valid base64/UTF-8 (already-decoded firmware)."""
+    if not raw:
+        return ""
+    try:
+        import base64
+        return base64.b64decode(raw, validate=True).decode("utf-8")
+    except Exception:
+        return raw
+
+
 async def _identify_tapo(ip: str, username: str, password: str) -> dict | None:
     from tapo import ApiClient
     try:
@@ -98,7 +112,7 @@ async def _identify_tapo(ip: str, username: str, password: str) -> dict | None:
     return {
         "ip": ip,
         "model": info.get("model") or "?",
-        "nickname": info.get("nickname") or "",
+        "nickname": _decode_tapo_nickname(info.get("nickname") or ""),
     }
 
 
