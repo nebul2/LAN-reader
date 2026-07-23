@@ -56,7 +56,7 @@ if sys.platform == "darwin":
     app = BUNDLE(
         coll,
         name="LEM.app",
-        icon=None,
+        icon=os.path.join(SPECPATH, "gos.icns"),
         bundle_identifier="org.greeningofstreaming.lem",
         info_plist={
             "NSHighResolutionCapable": True,
