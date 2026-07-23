@@ -1,21 +1,21 @@
 """Device registry. Factories are lazy so optional deps (aiohttp for shelly)
 are only required when that device type is actually used."""
 
-from measure.devices.base import BaseDevice
+from lem.devices.base import BaseDevice
 
 
 def _tapo() -> BaseDevice:
-    from measure.devices.tapo import TapoDevice
+    from lem.devices.tapo import TapoDevice
     return TapoDevice()
 
 
 def _shelly() -> BaseDevice:
-    from measure.devices.shelly import ShellyDevice
+    from lem.devices.shelly import ShellyDevice
     return ShellyDevice()
 
 
 def _fake() -> BaseDevice:
-    from measure.devices.fake import FakeDevice
+    from lem.devices.fake import FakeDevice
     return FakeDevice()
 
 

@@ -9,7 +9,11 @@ import tomllib
 from dataclasses import dataclass
 from pathlib import Path
 
-DEFAULT_PATHS = (Path("config.toml"), Path.home() / ".config" / "measure" / "config.toml")
+DEFAULT_PATHS = (
+    Path("config.toml"),
+    Path.home() / ".config" / "lem" / "config.toml",
+    Path.home() / ".config" / "measure" / "config.toml",  # pre-rename installs
+)
 
 
 class ConfigError(Exception):

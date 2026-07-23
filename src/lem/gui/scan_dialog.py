@@ -7,7 +7,7 @@ from PySide6.QtWidgets import (
     QTableWidgetItem, QVBoxLayout,
 )
 
-from measure.scan import ENERGY_MODELS, sanitize_alias, unique_alias
+from lem.scan import ENERGY_MODELS, sanitize_alias, unique_alias
 
 
 class ScanResultsDialog(QDialog):

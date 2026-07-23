@@ -9,7 +9,7 @@ from rich.progress import BarColumn, Progress, TextColumn, TimeRemainingColumn
 from rich.table import Table
 from rich.live import Live
 
-from measure.model import PlugState
+from lem.model import PlugState
 
 REFRESH_INTERVAL = 0.25
 

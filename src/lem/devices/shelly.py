@@ -13,7 +13,7 @@ Credentials are optional (many Shelly devices ship with no auth).
 
 import aiohttp
 
-from measure.devices.base import BaseDevice
+from lem.devices.base import BaseDevice
 
 
 class ShellyDevice(BaseDevice):

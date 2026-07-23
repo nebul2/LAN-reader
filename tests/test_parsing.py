@@ -2,8 +2,8 @@ import textwrap
 
 import pytest
 
-from measure.cli import parse_duration
-from measure.config import ConfigError, load_config
+from lem.cli import parse_duration
+from lem.config import ConfigError, load_config
 
 
 def test_duration_bare_seconds():

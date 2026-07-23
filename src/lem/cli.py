@@ -1,12 +1,12 @@
 """Command-line entry point.
 
 Examples:
-    measure --plugs desk,rack --duration 10m
-    measure --all
-    measure --plugs desk --interval 0.5 --duration unlimited
-    measure --list
-    measure --scan                            # discover plugs on the local /24
-    measure --plugs fake1 --duration 30s      # dry run, no hardware
+    lem --plugs desk,rack --duration 10m
+    lem --all
+    lem --plugs desk --interval 0.5 --duration unlimited
+    lem --list
+    lem --scan                            # discover plugs on the local /24
+    lem --plugs fake1 --duration 30s      # dry run, no hardware
 """
 
 import argparse
@@ -19,11 +19,11 @@ from pathlib import Path
 
 from rich.console import Console
 
-from measure.config import Config, ConfigError, load_config
-from measure.display import make_display, print_summary
-from measure.model import PlugState
-from measure.runner import run
-from measure.sinks.csv_sink import CsvSink
+from lem.config import Config, ConfigError, load_config
+from lem.display import make_display, print_summary
+from lem.model import PlugState
+from lem.runner import run
+from lem.sinks.csv_sink import CsvSink
 
 _DURATION_RE = re.compile(r"^(\d+(?:\.\d+)?)([smh]?)$")
 _DURATION_MULT = {"": 1, "s": 1, "m": 60, "h": 3600}
@@ -47,8 +47,8 @@ def parse_duration(text: str) -> float | None:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="measure",
-        description="Measure power from one or more smart plugs on the LAN.",
+        prog="lem",
+        description="LEM (Local Energy Measurement) — measure power from smart plugs on the LAN.",
     )
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--plugs", help="comma-separated plug aliases from the config")
@@ -80,7 +80,7 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
 
     if args.scan:
-        from measure.scan import run_scan
+        from lem.scan import run_scan
         try:
             return run_scan(args.scan, args.config, console)
         except KeyboardInterrupt:

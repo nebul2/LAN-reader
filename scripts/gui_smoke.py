@@ -17,7 +17,7 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 from PySide6.QtCore import Qt
 from PySide6.QtWidgets import QApplication
 
-from measure.gui.app import MainWindow
+from lem.gui.app import MainWindow
 
 tmp = Path(tempfile.mkdtemp(prefix="lanreader_gui_smoke_"))
 cfg = tmp / "config.toml"

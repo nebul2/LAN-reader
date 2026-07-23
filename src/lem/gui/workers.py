@@ -9,8 +9,8 @@ import asyncio
 
 from PySide6.QtCore import QThread, Signal
 
-from measure import runner
-from measure.scan import scan_network
+from lem import runner
+from lem.scan import scan_network
 
 
 class MeasurementWorker(QThread):

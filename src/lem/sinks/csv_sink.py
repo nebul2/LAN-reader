@@ -12,8 +12,8 @@ gos_rem TIMESTAMPTZ column.
 import csv
 from pathlib import Path
 
-from measure.model import Sample
-from measure.sinks.base import BaseSink
+from lem.model import Sample
+from lem.sinks.base import BaseSink
 
 
 class CsvSink(BaseSink):

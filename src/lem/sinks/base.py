@@ -7,7 +7,7 @@ without touching the measurement loop.
 
 from abc import ABC, abstractmethod
 
-from measure.model import Sample
+from lem.model import Sample
 
 
 class BaseSink(ABC):

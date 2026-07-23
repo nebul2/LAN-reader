@@ -2,7 +2,7 @@ import textwrap
 
 import pytest
 
-from measure.scan import (
+from lem.scan import (
     plug_section,
     remove_plug_sections,
     resolve_network,
@@ -79,7 +79,7 @@ def test_remove_plug_sections_selective():
 
 
 def test_rename_plug_section():
-    from measure.scan import rename_plug_section
+    from lem.scan import rename_plug_section
     import tomllib
     out = rename_plug_section(CONFIG, "desk", "bench")
     parsed = tomllib.loads(out)
@@ -89,7 +89,7 @@ def test_rename_plug_section():
 
 
 def test_rename_plug_section_no_match_is_noop():
-    from measure.scan import rename_plug_section
+    from lem.scan import rename_plug_section
     assert rename_plug_section(CONFIG, "nonexistent", "x") == CONFIG
 
 

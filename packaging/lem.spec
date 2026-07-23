@@ -1,7 +1,7 @@
-# PyInstaller spec for the LAN-reader desktop app.
+# PyInstaller spec for the LEM desktop app.
 #
-# macOS:   venv/bin/pyinstaller packaging/LAN-reader.spec --noconfirm  -> dist/LAN-reader.app
-# Windows: same spec on a Windows machine/runner                       -> dist/LAN-reader/LAN-reader.exe
+# macOS:   venv/bin/pyinstaller packaging/lem.spec --noconfirm  -> dist/LEM.app
+# Windows: same spec on a Windows machine/runner                -> dist/LEM/LEM.exe
 #
 # The bundle is unsigned; signing/notarization is applied to the finished
 # .app once the Apple Developer (GREENING OF STREAMING) account is active.
@@ -20,8 +20,8 @@ a = Analysis(
     # DEVICE_TYPES registry, so PyInstaller's static analysis misses them.
     hiddenimports=[
         "tapo",
-        "measure.devices.tapo",
-        "measure.devices.fake",
+        "lem.devices.tapo",
+        "lem.devices.fake",
     ],
     hookspath=[],
     runtime_hooks=[],
@@ -36,7 +36,7 @@ exe = EXE(
     a.scripts,
     [],
     exclude_binaries=True,
-    name="LAN-reader",
+    name="LEM",
     debug=False,
     strip=False,
     upx=False,
@@ -49,23 +49,23 @@ coll = COLLECT(
     a.datas,
     strip=False,
     upx=False,
-    name="LAN-reader",
+    name="LEM",
 )
 
 if sys.platform == "darwin":
     app = BUNDLE(
         coll,
-        name="LAN-reader.app",
+        name="LEM.app",
         icon=None,
-        bundle_identifier="org.greeningofstreaming.lan-reader",
+        bundle_identifier="org.greeningofstreaming.lem",
         info_plist={
             "NSHighResolutionCapable": True,
-            "CFBundleShortVersionString": "0.1.0",
+            "CFBundleShortVersionString": "0.2.0",
             "NSHumanReadableCopyright": "Greening of Streaming",
             # Without this, macOS silently blocks all LAN connections (no
             # prompt), and scans/measurements find nothing.
             "NSLocalNetworkUsageDescription":
-                "LAN-reader talks to smart plugs on your local network to "
+                "LEM talks to smart plugs on your local network to "
                 "discover them and measure their power consumption.",
         },
     )

@@ -5,10 +5,10 @@ import asyncio
 import signal
 from datetime import datetime, timezone
 
-from measure.config import PlugConfig
-from measure.devices import make_device
-from measure.model import PlugState, Sample
-from measure.sinks.base import BaseSink
+from lem.config import PlugConfig
+from lem.devices import make_device
+from lem.model import PlugState, Sample
+from lem.sinks.base import BaseSink
 
 CONNECT_BACKOFF_INITIAL = 2.0
 CONNECT_BACKOFF_MAX = 15.0

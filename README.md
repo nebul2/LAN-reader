@@ -1,53 +1,54 @@
-# LAN-reader
+# LEM — Local Energy Measurement
 
-A lab CLI to measure power consumption from one or more smart plugs on the LAN
-(TP-Link Tapo P110 today; other plugs or PDUs are one module away). Successor to
-[tapo_measure_tool](https://github.com/Quanteec/tapo_measure_tool) and
-`dual_measure_tool` — no GUI, no web server, one command.
+A lab tool to measure power consumption from one or more smart plugs on the LAN
+(TP-Link Tapo P110 today; other plugs or PDUs are one module away). The local
+companion to [REM](https://github.com/nebul2/REM) (Remote Energy Measurement).
+Successor to [tapo_measure_tool](https://github.com/Quanteec/tapo_measure_tool)
+and `dual_measure_tool` — no web server, one command (or one double-click).
 
-- **Multiple plugs at once** — each polled concurrently at its own drift-free interval.
+- **Local by design** — plugs are measured over your LAN using the Tapo local
+  protocol. **LEM never calls the TP-Link cloud API.**
+- **Multiple plugs at once** — each polled concurrently at a drift-free interval.
 - **Crash-safe** — every sample is flushed to disk as it arrives. Ctrl-C stops
   gracefully with a summary; even `kill -9` loses at most the in-flight sample.
-- **Live terminal display** — per-plug power, sample count, and status, plus a
-  progress bar with time remaining.
+- **Live display** — per-plug power, sample count, and status (terminal or GUI).
 - **REM-ready data** — watts at 3-decimal precision (lossless: the P110 reports
   integer mW), UTC ISO 8601 timestamps, and a combined CSV whose columns
   (`timestamp,alias,power_w`) map 1:1 to REM's `gos_rem(time, alias, power_watts)`
-  table for future export.
+  table.
 
-## Install
+## Install (CLI)
 
 ```sh
 python3 -m venv venv && source venv/bin/activate
-pip install -e .            # add '.[shelly]' for Shelly plug support, '.[dev]' for pytest
-cp config.example.toml config.toml   # then edit: credentials + plug IPs
+pip install -e .            # add '.[gui]' for the desktop app, '.[shelly]' for Shelly, '.[dev]' for pytest
+cp config.example.toml config.toml   # or let 'lem --scan' create it
 ```
 
 Requires Python ≥ 3.11.
 
-## Use
+## Use (CLI)
 
 ```sh
-measure --scan                                # discover Tapo plugs on the local /24
-measure --scan 10.0.0.0/24                    # ...or an explicit subnet
-measure --list                                # show configured plugs
-measure --plugs desk,rack --duration 10m      # measure two plugs for 10 minutes
-measure --all                                 # every configured plug
-measure --plugs desk --interval 0.5 --duration unlimited   # until Ctrl-C
-measure --plugs fake1 --duration 30s          # dry run, no hardware
+lem --scan                                # discover Tapo plugs on the local /24
+lem --scan 10.0.0.0/24                    # ...or an explicit subnet
+lem --list                                # show configured plugs
+lem --plugs desk,rack --duration 10m      # measure two plugs for 10 minutes
+lem --all                                 # every configured plug
+lem --plugs desk --interval 0.5 --duration unlimited   # until Ctrl-C
+lem --plugs fake1 --duration 30s          # dry run, no hardware
 ```
 
 Durations: bare seconds, `90s`, `10m`, `2h`, or `unlimited`. First Ctrl-C stops
 gracefully (data is already on disk); a second one hard-exits.
 
 `--scan` probes the subnet for hosts answering on port 80, then confirms each
-one with a real Tapo handshake (so it needs your Tapo cloud credentials — from
-the config, `TAPO_USERNAME`/`TAPO_PASSWORD`, or an interactive prompt). Each
-device found is offered interactively: accept or refuse it, and name it (the
-plug's Tapo nickname is the suggested alias). If the config already has Tapo
-plugs you choose up front whether to add to them or replace them; everything
-else in the file (credentials, defaults, fake plugs, comments) is preserved,
-and a missing config file is created from scratch.
+one with a real Tapo handshake (needs your Tapo account login — from the
+config, `TAPO_USERNAME`/`TAPO_PASSWORD`, or an interactive prompt; saved once a
+scan succeeds). Each device found is offered interactively: accept or refuse,
+and name it (the plug's Tapo nickname is the suggested alias). With existing
+plugs configured you choose add-vs-replace up front; everything else in the
+config file is preserved.
 
 Each run writes to `results/` (override with `--results-dir` / `--run-name`):
 
@@ -56,7 +57,9 @@ Each run writes to `results/` (override with `--results-dir` / `--run-name`):
 
 ## Configuration
 
-`config.toml` (gitignored — it holds credentials; see `config.example.toml`):
+`config.toml` (gitignored — it holds credentials; see `config.example.toml`).
+Searched in: `./config.toml`, `~/.config/lem/config.toml` (the GUI's default),
+then the legacy `~/.config/measure/` path.
 
 ```toml
 [defaults]
@@ -76,44 +79,45 @@ ip   = "192.168.1.41"
 Any per-plug key besides `type`/`ip` is passed to the device driver — credential
 overrides, the fake device's `fail_rate`, or (one day) a PDU's outlet number.
 
-## Extending
-
-- **New device type** (plug, PDU): add one module in `src/measure/devices/`
-  implementing `BaseDevice` (`connect` / `get_power_mw` / `disconnect`) and
-  register it in `DEVICE_TYPES` in `devices/__init__.py`. Nothing else changes.
-- **New output** (e.g. pushing to REM): add a module in `src/measure/sinks/`
-  implementing `BaseSink` (`open` / `write` / `close`) and append it to the sink
-  list in `cli.py`. The measurement loop is sink-agnostic.
-
 ## Desktop app (GUI)
 
 The same core with a point-and-click face, for testers who don't use terminals:
 
 ```sh
 pip install -e '.[gui]'
-measure-gui
+lem-gui
 ```
 
-Tick plugs, set duration/interval, Start/Stop, live table, "Scan network for
-plugs…" with an accept/rename dialog, and an "Open results folder" button.
-CSV output is identical to the CLI's.
+Tick plugs, set duration/interval, Start/Stop, live table, network scan with an
+accept/rename dialog (double-click a plug to rename later), and an "Open
+results folder" button. CSV output is identical to the CLI's.
 
 ### Packaging (macOS)
 
 ```sh
-./packaging/build_macos.sh     # -> dist/LAN-reader.app (unsigned)
+./packaging/build_macos.sh     # -> dist/LEM.app (unsigned)
 ```
 
-The same `packaging/LAN-reader.spec` builds the Windows .exe when run on a
-Windows machine (PyInstaller doesn't cross-compile) — CI workflow to follow.
-Signing/notarization steps are sketched in `packaging/build_macos.sh` and will
-be enabled once the Greening of Streaming Apple Developer account is active.
+The same `packaging/lem.spec` builds the Windows .exe when run on a Windows
+machine (PyInstaller doesn't cross-compile) — CI workflow to follow. Signing/
+notarization steps are sketched in `packaging/build_macos.sh` and will be
+enabled once the Greening of Streaming Apple Developer account is active.
+
+## Extending
+
+- **New device type** (plug, PDU): add one module in `src/lem/devices/`
+  implementing `BaseDevice` (`connect` / `get_power_mw` / `disconnect`) and
+  register it in `DEVICE_TYPES` in `devices/__init__.py`. Nothing else changes.
+- **New output** (e.g. pushing to REM): add a module in `src/lem/sinks/`
+  implementing `BaseSink` (`open` / `write` / `close`) and append it to the sink
+  list in `cli.py`. The measurement loop is sink-agnostic.
 
 ## Test
 
 ```sh
-pytest                                   # parsing/config unit tests
-measure --plugs fake1 --duration 10s     # end-to-end without hardware
+pytest                               # parsing/config/scan unit tests
+lem --plugs fake1 --duration 10s     # end-to-end without hardware
+QT_QPA_PLATFORM=offscreen python scripts/gui_smoke.py   # GUI end-to-end
 ```
 
 The `fake` device type generates ~40 W synthetic data; give it `fail_rate = 0.5`

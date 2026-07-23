@@ -23,7 +23,7 @@ from pathlib import Path
 from rich.console import Console
 from rich.table import Table
 
-from measure.config import DEFAULT_PATHS, ConfigError, load_config
+from lem.config import DEFAULT_PATHS, ConfigError, load_config
 
 PORT = 80
 PORT_TIMEOUT = 0.75

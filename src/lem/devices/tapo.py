@@ -7,7 +7,7 @@ import asyncio
 
 from tapo import ApiClient
 
-from measure.devices.base import BaseDevice
+from lem.devices.base import BaseDevice
 
 
 class TapoDevice(BaseDevice):

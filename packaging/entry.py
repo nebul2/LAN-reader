@@ -2,6 +2,6 @@
 
 import sys
 
-from measure.gui.app import main
+from lem.gui.app import main
 
 sys.exit(main())

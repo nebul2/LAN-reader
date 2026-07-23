@@ -1,7 +1,7 @@
 """PySide6 desktop frontend — same core as the CLI, different face.
 
-Entry point: measure-gui (see pyproject.toml). Set LAN_READER_SMOKE=1 to
-construct the window and exit immediately (used by packaging smoke tests).
+Entry point: lem-gui (see pyproject.toml). Set LEM_SMOKE=1 to construct the
+window and exit immediately (used by packaging smoke tests).
 """
 
 import os
@@ -19,13 +19,13 @@ from PySide6.QtWidgets import (
     QPushButton, QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
-from measure import scan as scan_mod
-from measure.cli import parse_duration
-from measure.config import DEFAULT_PATHS, ConfigError, load_config
-from measure.gui.scan_dialog import ScanResultsDialog
-from measure.gui.workers import MeasurementWorker, ScanWorker
-from measure.model import PlugState
-from measure.sinks.csv_sink import CsvSink
+from lem import scan as scan_mod
+from lem.cli import parse_duration
+from lem.config import DEFAULT_PATHS, ConfigError, load_config
+from lem.gui.scan_dialog import ScanResultsDialog
+from lem.gui.workers import MeasurementWorker, ScanWorker
+from lem.model import PlugState
+from lem.sinks.csv_sink import CsvSink
 
 
 def default_config_path() -> Path:
@@ -56,7 +56,7 @@ class MainWindow(QMainWindow):
         # re-prompt (they're only written to config after a successful scan).
         self._session_creds = None
 
-        self.setWindowTitle("LAN-reader")
+        self.setWindowTitle("LEM — Local Energy Measurement")
         self.resize(680, 640)
 
         central = QWidget()
@@ -415,9 +415,9 @@ class MainWindow(QMainWindow):
 
 def main() -> int:
     app = QApplication(sys.argv)
-    app.setApplicationName("LAN-reader")
+    app.setApplicationName("LEM")
     window = MainWindow()
-    if os.environ.get("LAN_READER_SMOKE"):
+    if os.environ.get("LEM_SMOKE") or os.environ.get("LAN_READER_SMOKE"):
         return 0
     window.show()
     return app.exec()

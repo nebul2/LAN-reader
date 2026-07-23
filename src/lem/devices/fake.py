@@ -8,7 +8,7 @@ import math
 import random
 import time
 
-from measure.devices.base import BaseDevice
+from lem.devices.base import BaseDevice
 
 
 class FakeDevice(BaseDevice):
