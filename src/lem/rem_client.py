@@ -81,30 +81,29 @@ def resolve_code(code: str, url: str = DEFAULT_REM_URL) -> RemJoin:
 
 
 class RemClient:
-    def __init__(self, url: str, token: str, timeout: float = 10.0):
+    def __init__(self, url: str, token: str = "", timeout: float = 10.0):
+        # token is optional — the /api/field/resolve short-code lookup is
+        # unauthenticated (the short code is the shared secret).
         self.url = url.rstrip("/")
         self.token = token
         self.timeout = timeout
 
+    def _headers(self) -> dict:
+        h = {"User-Agent": "lem/0.2.0"}
+        if self.token:
+            h["Authorization"] = f"Bearer {self.token}"
+        return h
+
     def _post(self, path: str, body: dict) -> dict:
+        h = self._headers()
+        h["Content-Type"] = "application/json"
         req = urllib.request.Request(
-            f"{self.url}{path}",
-            data=json.dumps(body).encode(),
-            headers={
-                "Content-Type": "application/json",
-                "Authorization": f"Bearer {self.token}",
-                "User-Agent": "lem/0.2.0",
-            },
-            method="POST",
+            f"{self.url}{path}", data=json.dumps(body).encode(), headers=h, method="POST",
         )
         return self._send(req)
 
     def _get(self, path: str) -> dict:
-        req = urllib.request.Request(
-            f"{self.url}{path}",
-            headers={"Authorization": f"Bearer {self.token}", "User-Agent": "lem/0.2.0"},
-            method="GET",
-        )
+        req = urllib.request.Request(f"{self.url}{path}", headers=self._headers(), method="GET")
         return self._send(req)
 
     def _send(self, req) -> dict:

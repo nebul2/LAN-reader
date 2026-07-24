@@ -93,6 +93,9 @@ class RemJoinWorker(QThread):
         except RemError as e:
             self.failed.emit(str(e))
             return
+        except Exception as e:  # never leave the UI stuck on "Connecting…"
+            self.failed.emit(f"Unexpected error: {e}")
+            return
         self.joined.emit(join, hello)
 
 

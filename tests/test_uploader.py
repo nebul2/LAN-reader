@@ -40,6 +40,22 @@ def test_join_code_bad(bad):
         parse_join_code(bad)
 
 
+def test_resolve_short_code(monkeypatch):
+    # Short code -> RemClient(url) with NO token -> /api/field/resolve.
+    # Regression: RemClient used to require a token, so this raised TypeError.
+    from lem import rem_client
+    monkeypatch.setattr(rem_client.RemClient, "_get",
+                        lambda self, path: {"url": "https://r.example",
+                                            "experiment_id": "tv", "token": "tok123"})
+    j = rem_client.resolve_code("T9MRWE", "https://r.example")
+    assert (j.url, j.experiment_id, j.token) == ("https://r.example", "tv", "tok123")
+
+
+def test_remclient_no_token_ok():
+    from lem.rem_client import RemClient
+    RemClient("https://r.example")  # must not raise (token optional)
+
+
 def test_parse_rows_maps_alias_and_skips_header():
     text = "timestamp,alias,power_w\n2026-07-23T10:00:00.100+00:00,desk,12.345\n"
     rows = _parse_rows(text, skip_header=True, alias_map={"desk": "Lyon TV"})
