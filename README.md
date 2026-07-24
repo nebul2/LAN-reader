@@ -1,7 +1,7 @@
 # LEM — Local Energy Measurement
 
 A lab tool to measure power consumption from one or more smart plugs on the LAN
-(TP-Link Tapo P110 today; other plugs or PDUs are one module away). The local
+(TP-Link Tapo P110 and Shelly plugs today; other plugs or PDUs are one module away). The local
 companion to [REM](https://github.com/nebul2/REM) (Remote Energy Measurement).
 Successor to [tapo_measure_tool](https://github.com/Quanteec/tapo_measure_tool)
 and `dual_measure_tool` — no web server, one command (or one double-click).
@@ -28,7 +28,7 @@ so macOS/Windows will warn on first launch — right-click → Open / "Run anywa
 
 ```sh
 python3 -m venv venv && source venv/bin/activate
-pip install -e .            # add '.[gui]' for the desktop app, '.[shelly]' for Shelly, '.[dev]' for pytest
+pip install -e .            # add '.[gui]' for the desktop app, '.[dev]' for pytest
 cp config.example.toml config.toml   # or let 'lem --scan' create it
 ```
 
@@ -37,7 +37,7 @@ Requires Python ≥ 3.11.
 ## Use (CLI)
 
 ```sh
-lem --scan                                # discover Tapo plugs on the local /24
+lem --scan                                # discover Tapo + Shelly plugs on the local /24 (Shelly needs no credentials)
 lem --scan 10.0.0.0/24                    # ...or an explicit subnet
 lem --list                                # show configured plugs
 lem --plugs desk,rack --duration 10m      # measure two plugs for 10 minutes
