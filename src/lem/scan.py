@@ -111,17 +111,52 @@ async def _identify_tapo(ip: str, username: str, password: str) -> dict | None:
         return None
     return {
         "ip": ip,
+        "type": "tapo",
         "model": info.get("model") or "?",
         "nickname": _decode_tapo_nickname(info.get("nickname") or ""),
     }
 
 
+def _http_get_json(url: str, timeout: float = 4.0):
+    """Blocking GET returning parsed JSON or None. Run via asyncio.to_thread —
+    keeps the scan free of an aiohttp import (measurement uses aiohttp)."""
+    import json
+    import urllib.request
+    try:
+        with urllib.request.urlopen(url, timeout=timeout) as r:
+            return json.loads(r.read().decode())
+    except Exception:
+        return None
+
+
+async def _identify_shelly(ip: str) -> dict | None:
+    """Every Shelly (Gen1 & Gen2/3+) answers the unauthenticated GET /shelly.
+    Gen2+: {name,id,model,gen,...}. Gen1: {type,mac,num_meters,...} with the
+    user name in GET /settings."""
+    info = await asyncio.to_thread(_http_get_json, f"http://{ip}/shelly")
+    if not isinstance(info, dict):
+        return None
+    gen = info.get("gen", 1)
+    if gen and gen >= 2:  # Gen2/Gen3+
+        name = info.get("name") or info.get("id") or ""
+        model = info.get("model") or info.get("app") or "Shelly"
+    elif "type" in info:  # Gen1
+        model = info.get("type") or "Shelly"
+        settings = await asyncio.to_thread(_http_get_json, f"http://{ip}/settings")
+        name = (settings or {}).get("name") or model
+    else:
+        return None  # answered /shelly but not a recognisable Shelly
+    return {"ip": ip, "type": "shelly", "model": model, "nickname": name, "gen": gen}
+
+
 async def scan_network(
     network: ipaddress.IPv4Network,
-    username: str,
-    password: str,
+    username: str = "",
+    password: str = "",
     console: Console | None = None,
 ) -> list[dict]:
+    """Discover Tapo and Shelly plugs. Shelly needs no credentials; Tapo is
+    only probed when username/password are supplied."""
     def status(msg):
         return console.status(msg) if console else contextlib.nullcontext()
 
@@ -134,12 +169,16 @@ async def scan_network(
         return []
     if console:
         console.print(f"{len(candidates)} host(s) answered on port {PORT}.")
-    with status(f"Checking {len(candidates)} host(s) for Tapo devices..."):
+    with status(f"Identifying {len(candidates)} host(s) (Shelly + Tapo)..."):
         sem = asyncio.Semaphore(IDENTIFY_CONCURRENCY)
 
         async def ident(ip):
             async with sem:
-                return await _identify_tapo(ip, username, password)
+                # Shelly first — cheap, unauthenticated. Tapo only if creds given.
+                d = await _identify_shelly(ip)
+                if d is None and username and password:
+                    d = await _identify_tapo(ip, username, password)
+                return d
 
         results = await asyncio.gather(*(ident(ip) for ip in candidates))
     return [r for r in results if r]
@@ -185,12 +224,14 @@ def rename_plug_section(text: str, old: str, new: str) -> str:
     )
 
 
-def plug_section(alias: str, ip: str, tapo_name: str | None = None) -> str:
-    section = f'\n[plugs.{alias}]\ntype = "tapo"\nip   = "{ip}"\n'
-    if tapo_name:
-        # Verbatim Tapo nickname — REM's identity for this device. JSON string
+def plug_section(alias: str, ip: str, name: str | None = None, dtype: str = "tapo") -> str:
+    section = f'\n[plugs.{alias}]\ntype = "{dtype}"\nip   = "{ip}"\n'
+    if name:
+        # The device's own name — REM's identity for it. For Tapo it must match
+        # the cloud nickname (tapo_name); other devices use device_name. JSON
         # escaping is valid TOML basic-string escaping (quotes, unicode, \).
-        section += f"tapo_name = {json.dumps(tapo_name)}\n"
+        key = "tapo_name" if dtype == "tapo" else "device_name"
+        section += f"{key} = {json.dumps(name)}\n"
     return section
 
 
@@ -246,22 +287,30 @@ def ensure_credentials_saved(
     return None
 
 
+def _entry_parts(entry):
+    """(alias, ip[, name[, dtype]]) -> (alias, ip, name, dtype)."""
+    alias, ip, *rest = entry
+    name = rest[0] if len(rest) >= 1 else None
+    dtype = rest[1] if len(rest) >= 2 else "tapo"
+    return alias, ip, name, dtype
+
+
 def write_plugs(
     config_path: Path, accepted: list[tuple], remove_aliases: set[str] = frozenset()
 ) -> None:
-    """Append accepted (alias, ip[, tapo_name]) tapo plugs, optionally
-    removing old sections first."""
+    """Append accepted (alias, ip[, name[, dtype]]) plugs, optionally removing
+    old sections first."""
     text = config_path.read_text()
     if remove_aliases:
         text = remove_plug_sections(text, set(remove_aliases))
     for entry in accepted:
-        alias, ip, *rest = entry
-        text += plug_section(alias, ip, rest[0] if rest else None)
+        alias, ip, name, dtype = _entry_parts(entry)
+        text += plug_section(alias, ip, name, dtype)
     config_path.write_text(text)
 
 
 def _plugs_by_ip(config_path: Path) -> dict[str, str]:
-    """Map ip -> existing alias for tapo plugs already in the config."""
+    """Map ip -> existing alias for any real (non-fake) plug in the config."""
     if not config_path.exists():
         return {}
     try:
@@ -271,16 +320,16 @@ def _plugs_by_ip(config_path: Path) -> dict[str, str]:
         return {}
     out = {}
     for alias, p in (raw.get("plugs") or {}).items():
-        if isinstance(p, dict) and p.get("type") == "tapo" and p.get("ip"):
+        if isinstance(p, dict) and p.get("type") != "fake" and p.get("ip"):
             out[p["ip"]] = alias
     return out
 
 
 def upsert_plugs(config_path: Path, entries: list[tuple]) -> tuple[int, int]:
-    """Add or refresh tapo plugs, matched by IP — non-destructive to plugs not
-    in `entries`, and to credentials/[rem]/comments. A plug already configured
-    at the same IP is replaced in place (refreshing its tapo_name and alias);
-    a new IP is appended. entries: (alias, ip[, tapo_name]). Returns
+    """Add or refresh plugs, matched by IP — non-destructive to plugs not in
+    `entries`, and to credentials/[rem]/comments. A plug already configured at
+    the same IP is replaced in place (refreshing its name, type, and alias); a
+    new IP is appended. entries: (alias, ip[, name[, dtype]]). Returns
     (added, refreshed)."""
     existing_by_ip = _plugs_by_ip(config_path)
     entry_ips = {e[1] for e in entries}
@@ -291,8 +340,8 @@ def upsert_plugs(config_path: Path, entries: list[tuple]) -> tuple[int, int]:
         text = remove_plug_sections(text, stale_aliases)
     added = refreshed = 0
     for entry in entries:
-        alias, ip, *rest = entry
-        text += plug_section(alias, ip, rest[0] if rest else None)
+        alias, ip, name, dtype = _entry_parts(entry)
+        text += plug_section(alias, ip, name, dtype)
         if ip in existing_by_ip:
             refreshed += 1
         else:
@@ -348,47 +397,47 @@ def run_scan(subnet_arg: str, config_arg: Path | None, console: Console) -> int:
         with open(config_path, "rb") as f:
             raw = tomllib.load(f)
 
-    # Credentials: env > config; prompt if still missing
+    # Tapo credentials: env > config. Shelly needs none, so they're optional —
+    # prompt but allow skipping (blank) to do a Shelly-only scan.
     creds = raw.get("credentials", {}).get("tapo", {})
     username = os.environ.get("TAPO_USERNAME") or creds.get("username") or ""
     password = os.environ.get("TAPO_PASSWORD") or creds.get("password") or ""
     if not username or not password:
-        console.print("Tapo cloud credentials are needed to identify devices.")
+        console.print("Tapo cloud credentials identify Tapo plugs (Shelly needs none).")
+        console.print("Press Enter at both prompts to scan for Shelly only.")
         username = _ask(f"Tapo username{f' [{username}]' if username else ''}: ", username)
         password = getpass.getpass("Tapo password: ") or password
-        if not username or not password:
-            console.print("[red]Error:[/red] credentials are required for scanning")
-            return 1
 
     existing_plugs = config.plugs if config else {}
-    ip_to_alias = {p.ip: a for a, p in existing_plugs.items() if p.type == "tapo"}
+    ip_to_alias = {p.ip: a for a, p in existing_plugs.items() if p.type != "fake"}
 
     # Scan
     found = asyncio.run(scan_network(network, username, password, console))
     if not found:
-        console.print(
-            "[yellow]No Tapo devices found.[/yellow] If plugs are definitely on this "
-            "subnet, check the credentials (a failed Tapo login looks identical to "
-            "a non-Tapo device)."
-        )
+        hint = "check the Tapo username/password" if (username and password) else \
+               "no credentials given, so only Shelly plugs were sought"
+        console.print(f"[yellow]No plugs found.[/yellow] If plugs are definitely on this "
+                      f"subnet, {hint}.")
         return 1
 
-    # Devices answered, so the credentials work — persist them now, regardless
-    # of whether any plugs end up being added below.
-    note = ensure_credentials_saved(config_path, raw, username, password)
-    if note:
-        console.print(note)
+    # Tapo answered, so the credentials work — persist them (only if Tapo used).
+    if username and password and any(d["type"] == "tapo" for d in found):
+        note = ensure_credentials_saved(config_path, raw, username, password)
+        if note:
+            console.print(note)
 
     table = Table(box=None, pad_edge=False)
     table.add_column("IP")
+    table.add_column("TYPE")
     table.add_column("MODEL")
-    table.add_column("NICKNAME")
+    table.add_column("NAME")
     table.add_column("")
     for d in found:
-        note = "" if d["model"].startswith(ENERGY_MODELS) else "[yellow]no energy monitoring?[/yellow]"
-        table.add_row(d["ip"], d["model"], d["nickname"] or "—", note)
+        note = "" if d["type"] != "tapo" or d["model"].startswith(ENERGY_MODELS) \
+            else "[yellow]no energy monitoring?[/yellow]"
+        table.add_row(d["ip"], d["type"], d["model"], d["nickname"] or "—", note)
     console.print()
-    console.print(f"Found {len(found)} Tapo device(s):")
+    console.print(f"Found {len(found)} plug(s):")
     console.print(table)
     console.print()
 
@@ -396,18 +445,18 @@ def run_scan(subnet_arg: str, config_arg: Path | None, console: Console) -> int:
     # are refreshed in place (nickname re-read from the device); others are
     # added. Nothing else in the config is touched (removal is a separate step).
     taken = set(existing_plugs)
-    accepted: list[tuple] = []  # (alias, ip, tapo_name)
+    accepted: list[tuple] = []  # (alias, ip, name, dtype)
     for d in found:
         known = ip_to_alias.get(d["ip"])
         verb = "Refresh" if known else "Add"
-        label = f"{d['ip']} ({d['model']}" + (f", \"{d['nickname']}\"" if d["nickname"] else "") + ")"
+        label = f"{d['ip']} ({d['type']} {d['model']}" + (f", \"{d['nickname']}\"" if d["nickname"] else "") + ")"
         if known:
             label += f" [currently '{known}']"
         if _ask(f"{verb} {label}? [Y/n] ", "y").lower() not in ("y", "yes"):
             continue
-        # Auto-name the local handle from the Tapo nickname (the source of
-        # truth). The nickname is stored verbatim as tapo_name and is what REM
-        # keys on; this alias is only a filename-safe slug of it. Reusing a
+        # Auto-name the local handle from the device's own name (the source of
+        # truth). The name is stored verbatim (tapo_name / device_name) and is
+        # what REM keys on; this alias is only a filename-safe slug. Reusing a
         # refreshed plug's own current alias avoids a spurious rename.
         pool = taken - ({known} if known else set())
         alias = unique_alias(
@@ -415,8 +464,8 @@ def run_scan(subnet_arg: str, config_arg: Path | None, console: Console) -> int:
             pool,
         )
         taken.add(alias)
-        console.print(f"  named '{alias}'  (Tapo nickname: \"{d['nickname'] or '—'}\")")
-        accepted.append((alias, d["ip"], d.get("nickname") or None))
+        console.print(f"  named '{alias}'  ({d['type']} name: \"{d['nickname'] or '—'}\")")
+        accepted.append((alias, d["ip"], d.get("nickname") or None, d["type"]))
 
     if not accepted:
         console.print("No changes made.")
@@ -424,6 +473,6 @@ def run_scan(subnet_arg: str, config_arg: Path | None, console: Console) -> int:
 
     added, refreshed = upsert_plugs(config_path, accepted)
     console.print(f"\nWrote {config_path}: {added} added, {refreshed} refreshed.")
-    for alias, ip, _tapo_name in accepted:
+    for alias, ip, _name, _dtype in accepted:
         console.print(f"  {alias:<16} {ip}")
     return 0

@@ -20,7 +20,9 @@ a = Analysis(
     # DEVICE_TYPES registry, so PyInstaller's static analysis misses them.
     hiddenimports=[
         "tapo",
+        "aiohttp",
         "lem.devices.tapo",
+        "lem.devices.shelly",
         "lem.devices.fake",
     ],
     hookspath=[],

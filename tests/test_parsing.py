@@ -120,6 +120,20 @@ def test_tapo_name_parsed_and_kept_out_of_credentials(tmp_path):
     assert upload_alias(plug) == "Lyon TV"
 
 
+def test_shelly_device_name_is_upload_identity(tmp_path):
+    from lem.config import upload_alias
+    path = _write_config(tmp_path, """
+        [plugs.bench]
+        type = "shelly"
+        ip = "10.0.0.5"
+        device_name = "Kitchen"
+    """)
+    plug = load_config(path).plugs["bench"]
+    assert plug.type == "shelly" and plug.device_name == "Kitchen"
+    assert "device_name" not in plug.credentials      # must not reach connect()
+    assert upload_alias(plug) == "Kitchen"             # REM identity = Shelly name
+
+
 def test_upload_alias_falls_back_to_local_alias(tmp_path):
     path = _write_config(tmp_path, """
         [plugs.fake1]

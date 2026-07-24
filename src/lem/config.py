@@ -26,10 +26,12 @@ class PlugConfig:
     type: str
     ip: str
     credentials: dict  # kwargs passed to BaseDevice.connect()
-    # Exact Tapo nickname, verbatim (may hold spaces/unicode). This is the
-    # device's identity in REM — the cloud collector uses the same string —
-    # so uploads must use it, never the sanitized local alias.
+    # The device's own name — used verbatim as its identity in REM.
+    # For Tapo, `tapo_name` is the cloud-account nickname (must match REM's
+    # cloud collector). For other devices (Shelly…), `device_name` is the
+    # device's own name. upload_alias() prefers tapo_name, then device_name.
     tapo_name: str | None = None
+    device_name: str | None = None
 
 
 @dataclass(frozen=True)
@@ -50,35 +52,39 @@ class Config:
 
 
 def upload_alias(plug: PlugConfig) -> str:
-    """The alias to report to REM: the Tapo nickname when known (matching the
-    cloud collector), else the local alias (fake plugs, hand-edited configs)."""
-    return plug.tapo_name or plug.alias
+    """The alias to report to REM: the device's name when known (Tapo nickname
+    matching the cloud collector, or a Shelly's own name), else the local
+    alias (fake plugs, hand-edited configs)."""
+    return plug.tapo_name or plug.device_name or plug.alias
 
 
 def nickname_warnings(plugs) -> list[str]:
-    """Identity problems that would confuse REM: duplicate or blank Tapo
-    nicknames (REM keys on the nickname, so these merge or misidentify)."""
+    """Identity problems that would confuse REM: a Tapo plug with no nickname
+    (can't match the cloud device), or two plugs that would upload under the
+    same name (their data merges)."""
     out = []
     by_name: dict[str, list[str]] = {}
     for p in plugs:
-        if p.type != "tapo":
+        if p.type == "fake":
             continue
-        if not p.tapo_name:
+        if p.type == "tapo" and not p.tapo_name:
             out.append(f"'{p.alias}' has no Tapo nickname — REM can't match it to the cloud device.")
-        else:
-            by_name.setdefault(p.tapo_name, []).append(p.alias)
+        name = p.tapo_name or p.device_name
+        if name:
+            by_name.setdefault(name, []).append(p.alias)
     for name, aliases in by_name.items():
         if len(aliases) > 1:
-            out.append(f"Duplicate Tapo nickname \"{name}\" on {', '.join(aliases)} "
-                       "— their data will merge in REM. Rename one in the Tapo app.")
+            out.append(f"Duplicate device name \"{name}\" on {', '.join(aliases)} "
+                       "— their data will merge in REM. Rename one on the device.")
     return out
 
 
 def _credentials_for(plug_type: str, plug_raw: dict, creds_raw: dict) -> dict:
-    # Any per-plug key besides type/ip/tapo_name is passed to the device's
-    # connect() (credential overrides, fake fail_rate, a PDU's outlet, ...).
+    # Any per-plug key besides type/ip/name is passed to the device's connect()
+    # (credential overrides, fake fail_rate, a PDU's outlet, ...).
     base = dict(creds_raw.get(plug_type, {}))
-    base.update({k: v for k, v in plug_raw.items() if k not in ("type", "ip", "tapo_name")})
+    base.update({k: v for k, v in plug_raw.items()
+                 if k not in ("type", "ip", "tapo_name", "device_name")})
     if plug_type == "tapo":
         if os.environ.get("TAPO_USERNAME"):
             base["username"] = os.environ["TAPO_USERNAME"]
@@ -121,6 +127,7 @@ def load_config(path: Path | None = None) -> Config:
             ip=ip,
             credentials=_credentials_for(plug_type, plug_raw, creds_raw),
             tapo_name=plug_raw.get("tapo_name") or None,
+            device_name=plug_raw.get("device_name") or None,
         )
 
     rem = None

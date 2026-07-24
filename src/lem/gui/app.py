@@ -193,10 +193,10 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Config error", str(e))
             return
         for alias, plug in self.config.plugs.items():
-            # Show the Tapo nickname (the source of truth) when we have it;
-            # fall back to the local handle for fakes / hand-edited entries.
-            name = plug.tapo_name or alias
-            where = plug.ip if plug.type == "tapo" else plug.type
+            # Show the device's own name (Tapo nickname / Shelly name) when we
+            # have it; fall back to the local handle for fakes / hand-edits.
+            name = plug.tapo_name or plug.device_name or alias
+            where = f"{plug.type}, {plug.ip}" if plug.type != "fake" else plug.type
             item = QListWidgetItem(f"{name}    ({where})")
             item.setData(Qt.UserRole, alias)
             item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
@@ -253,11 +253,11 @@ class MainWindow(QMainWindow):
     def explain_naming(self, item):
         QMessageBox.information(
             self, "Plug names",
-            "A plug's name is its Tapo nickname — the same name shown in the "
-            "TP-Link Tapo app, and the identity REM uses. LEM reads it from the "
-            "device and can't change it.\n\n"
-            "To rename a plug, change its nickname in the Tapo app, then re-scan "
-            "here to pick up the new name.",
+            "A plug's name comes from the device itself — the Tapo nickname (in "
+            "the Tapo app) or the Shelly name (in the Shelly app/web UI). It's "
+            "the identity REM uses, and LEM can't change it.\n\n"
+            "To rename a plug, change its name on the device, then re-scan here "
+            "to pick up the new name.",
         )
 
     # ------------------------------------------------------------- measurement
@@ -397,17 +397,22 @@ class MainWindow(QMainWindow):
         if (not username or not password) and self._session_creds:
             username, password = self._session_creds
         if not username or not password:
+            # Tapo creds are optional — Shelly needs none. Cancel/blank = Shelly-only.
             username, ok = QInputDialog.getText(
-                self, "Tapo account", "Tapo cloud username (email):", text=username
+                self, "Tapo account (optional)",
+                "Tapo cloud username (email) — leave blank to scan for Shelly only:",
+                text=username,
             )
-            if not ok or not username:
-                return
-            password, ok = QInputDialog.getText(
-                self, "Tapo account", "Tapo cloud password:", QLineEdit.Password
-            )
-            if not ok or not password:
-                return
-            self._session_creds = (username, password)
+            if ok and username:
+                password, ok = QInputDialog.getText(
+                    self, "Tapo account", "Tapo cloud password:", QLineEdit.Password
+                )
+                if ok and password:
+                    self._session_creds = (username, password)
+                else:
+                    password = ""
+            else:
+                username = password = ""
 
         try:
             default = str(scan_mod.default_network())
@@ -449,18 +454,20 @@ class MainWindow(QMainWindow):
         if not found:
             QMessageBox.information(
                 self, "No plugs found",
-                "No Tapo devices answered. If plugs are definitely on this network, "
-                "check the Tapo username/password — a failed login looks identical "
-                "to a non-Tapo device.",
+                "No plugs answered. If they're definitely on this network: for "
+                "Tapo, check the username/password; for Shelly, check the plug is "
+                "powered and on this subnet.",
             )
-            self.status_label.setText("Scan finished: no Tapo devices found.")
+            self.status_label.setText("Scan finished: no plugs found.")
             return
 
         username, password = self._scan_creds
-        note = scan_mod.ensure_credentials_saved(self.config_path, self._scan_raw, username, password)
+        note = None
+        if username and password and any(d["type"] == "tapo" for d in found):
+            note = scan_mod.ensure_credentials_saved(self.config_path, self._scan_raw, username, password)
 
         existing = self.config.plugs if self.config else {}
-        ip_to_alias = {p.ip: a for a, p in existing.items() if p.type == "tapo"}
+        ip_to_alias = {p.ip: a for a, p in existing.items() if p.type != "fake"}
         dialog = ScanResultsDialog(found, set(existing), ip_to_alias, self)
         if dialog.exec():
             accepted = dialog.selection()

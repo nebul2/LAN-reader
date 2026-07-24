@@ -114,6 +114,72 @@ def test_plug_section_roundtrip():
     assert parsed["plugs"]["bench"] == {"type": "tapo", "ip": "10.0.0.20"}
 
 
+def test_identify_shelly_gen2():
+    import asyncio
+    from unittest.mock import patch
+    from lem import scan
+    resp = {"name": "Kitchen", "id": "shellyplugs-aabbcc", "model": "SNPL-00112EU", "gen": 3}
+    with patch.object(scan, "_http_get_json", lambda url, timeout=4.0: resp):
+        d = asyncio.run(scan._identify_shelly("10.0.0.5"))
+    assert d == {"ip": "10.0.0.5", "type": "shelly", "model": "SNPL-00112EU",
+                 "nickname": "Kitchen", "gen": 3}
+
+
+def test_identify_shelly_gen2_no_name_falls_back_to_id():
+    import asyncio
+    from unittest.mock import patch
+    from lem import scan
+    resp = {"id": "shellyplugsg3-112233", "model": "S3PL", "gen": 3}
+    with patch.object(scan, "_http_get_json", lambda url, timeout=4.0: resp):
+        d = asyncio.run(scan._identify_shelly("10.0.0.6"))
+    assert d["nickname"] == "shellyplugsg3-112233" and d["gen"] == 3
+
+
+def test_identify_shelly_gen1_reads_settings_name():
+    import asyncio
+    from unittest.mock import patch
+    from lem import scan
+    def fake_get(url, timeout=4.0):
+        if url.endswith("/shelly"):
+            return {"type": "SHPLG-S", "mac": "AABBCC", "num_meters": 1}
+        if url.endswith("/settings"):
+            return {"name": "Desk Lamp"}
+        return None
+    with patch.object(scan, "_http_get_json", fake_get):
+        d = asyncio.run(scan._identify_shelly("10.0.0.7"))
+    assert d["type"] == "shelly" and d["model"] == "SHPLG-S" and d["nickname"] == "Desk Lamp"
+
+
+def test_identify_shelly_not_a_shelly():
+    import asyncio
+    from unittest.mock import patch
+    from lem import scan
+    with patch.object(scan, "_http_get_json", lambda url, timeout=4.0: None):
+        assert asyncio.run(scan._identify_shelly("10.0.0.8")) is None
+
+
+def test_plug_section_shelly_writes_device_name_and_type():
+    import tomllib
+    text = CONFIG + plug_section("bench", "10.0.0.9", "Bench Shelly", "shelly")
+    p = tomllib.loads(text)["plugs"]["bench"]
+    assert p == {"type": "shelly", "ip": "10.0.0.9", "device_name": "Bench Shelly"}
+
+
+def test_upsert_mixed_types(tmp_path):
+    import tomllib
+    from lem.scan import upsert_plugs
+    cfg = tmp_path / "config.toml"
+    cfg.write_text('[plugs.old]\ntype = "tapo"\nip = "10.0.0.1"\ntapo_name = "Old"\n')
+    added, refreshed = upsert_plugs(cfg, [
+        ("old", "10.0.0.1", "Old", "tapo"),          # refresh tapo by IP
+        ("shelly1", "10.0.0.2", "Kitchen", "shelly"),  # add shelly
+    ])
+    assert (added, refreshed) == (1, 1)
+    p = tomllib.loads(cfg.read_text())["plugs"]
+    assert p["old"]["type"] == "tapo" and p["old"]["tapo_name"] == "Old"
+    assert p["shelly1"] == {"type": "shelly", "ip": "10.0.0.2", "device_name": "Kitchen"}
+
+
 def test_plug_section_tapo_name_preserved_verbatim():
     import tomllib
     for name in ['Lyon "Salon" TV', "Décodeur n°2 çà", "back\\slash"]:
